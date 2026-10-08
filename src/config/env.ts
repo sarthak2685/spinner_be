@@ -13,6 +13,15 @@ export interface AppConfig {
   groqApiKey: string;
 }
 
+export const HOSTED_WEB_ORIGIN = 'https://spineer-fe.vercel.app';
+
+function resolveWebUrl(value: string | undefined, env: NodeJS.ProcessEnv) {
+  const cleaned = (value || '').replace(/\/$/, '');
+  const local = !cleaned || /localhost|127\.0\.0\.1/.test(cleaned);
+  if (local && env.NODE_ENV === 'production') return HOSTED_WEB_ORIGIN;
+  return cleaned || 'http://localhost:5173';
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const missing = ['DATABASE_URL', 'JWT_SECRET'].filter((key) => !env[key]);
   if (missing.length) {
@@ -23,8 +32,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     jwtSecret: env.JWT_SECRET as string,
     jwtExpires: env.JWT_EXPIRES || '12h',
     port: Number(env.PORT || 3001),
-    webOrigin: env.WEB_ORIGIN || 'http://localhost:5173',
-    publicWebUrl: env.PUBLIC_WEB_URL || 'http://localhost:5173',
+    webOrigin: resolveWebUrl(env.WEB_ORIGIN, env),
+    publicWebUrl: resolveWebUrl(env.PUBLIC_WEB_URL, env),
     vapidPublicKey: env.VAPID_PUBLIC_KEY || '',
     vapidPrivateKey: env.VAPID_PRIVATE_KEY || '',
     vapidSubject: env.VAPID_SUBJECT || 'mailto:admin@example.com',

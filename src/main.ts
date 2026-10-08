@@ -8,7 +8,7 @@ import { AppModule } from './app.module';
 import { HttpErrorFilter } from './common/filters/http-exception.filter';
 import { RequestIdInterceptor } from './common/interceptors/request-id.interceptor';
 import { TrimPipe } from './common/pipes/trim.pipe';
-import { loadConfig } from './config/env';
+import { HOSTED_WEB_ORIGIN, loadConfig } from './config/env';
 
 async function bootstrap() {
   const config = loadConfig();
@@ -18,7 +18,10 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpErrorFilter());
   app.useGlobalInterceptors(new RequestIdInterceptor());
   app.useGlobalPipes(new TrimPipe());
-  app.enableCors({ origin: config.webOrigin, credentials: true });
+  app.enableCors({
+    origin: [config.webOrigin, HOSTED_WEB_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+    credentials: true,
+  });
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
   await app.listen(config.port);
 }

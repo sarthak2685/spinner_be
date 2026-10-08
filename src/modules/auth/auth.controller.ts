@@ -23,8 +23,8 @@ export class AuthController {
   @Post('logout')
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     await this.auth.logout(req.cookies?.RS_RememberMe);
-    res.clearCookie('rs_access');
-    res.clearCookie('RS_RememberMe');
+    res.clearCookie('rs_access', this.cookieOptions(0));
+    res.clearCookie('RS_RememberMe', this.cookieOptions(0));
     return { ok: true };
   }
 
@@ -60,8 +60,13 @@ export class AuthController {
     try { return this.jwt.verify<AuthUser>(token); } catch { return null; }
   }
 
+  private cookieOptions(maxAge: number) {
+    const hosted = process.env.NODE_ENV === 'production';
+    return { httpOnly: true, path: '/', sameSite: hosted ? 'none' as const : 'lax' as const, secure: hosted, maxAge };
+  }
+
   private cookies(res: Response, access: string, remember: string | null) {
-    res.cookie('rs_access', access, { httpOnly: true, sameSite: 'lax', maxAge: 12 * 60 * 60 * 1000 });
-    if (remember) res.cookie('RS_RememberMe', remember, { httpOnly: true, sameSite: 'lax', maxAge: 30 * 24 * 60 * 60 * 1000 });
+    res.cookie('rs_access', access, this.cookieOptions(12 * 60 * 60 * 1000));
+    if (remember) res.cookie('RS_RememberMe', remember, this.cookieOptions(30 * 24 * 60 * 60 * 1000));
   }
 }
