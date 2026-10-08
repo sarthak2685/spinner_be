@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes, randomUUID } from 'crypto';
 import { DatabaseService } from '../../database/database.module';
@@ -12,7 +12,7 @@ import { ForgotDto, LoginDto, ResetDto } from './dto/auth.dto';
 interface CaptchaEntry { text: string; expires: number }
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
   private captchas = new Map<string, CaptchaEntry>();
 
   constructor(
@@ -20,6 +20,75 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly rates: RateLimitService,
   ) {}
+
+  async onModuleInit() {
+    try {
+      await this.ensureSuperAdmin();
+    } catch (error) {
+      console.error('Super admin setup failed.', error);
+    }
+  }
+
+  private async ensureSuperAdmin() {
+    await this.db.query(`CREATE TABLE IF NOT EXISTS public."Users" (
+      userid SERIAL PRIMARY KEY,
+      businessid INTEGER,
+      fullname VARCHAR(200),
+      mobile VARCHAR(20),
+      email VARCHAR(100),
+      passwordhash TEXT,
+      role VARCHAR(50),
+      createddate TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      failedloginattempts INTEGER DEFAULT 0,
+      lockoutend TIMESTAMP WITHOUT TIME ZONE
+    )`);
+    await this.db.query(`ALTER TABLE public."Users" ADD COLUMN IF NOT EXISTS failedloginattempts INTEGER DEFAULT 0`);
+    await this.db.query(`ALTER TABLE public."Users" ADD COLUMN IF NOT EXISTS lockoutend TIMESTAMP WITHOUT TIME ZONE`);
+    const customers = await this.db.one<{ ready: boolean }>(`SELECT to_regclass('public."Customers"') IS NOT NULL AS ready`);
+    if (customers?.ready) {
+      await this.db.query(`ALTER TABLE public."Customers" ADD COLUMN IF NOT EXISTS failedloginattempts INTEGER DEFAULT 0`);
+      await this.db.query(`ALTER TABLE public."Customers" ADD COLUMN IF NOT EXISTS lockoutend TIMESTAMP WITHOUT TIME ZONE`);
+    }
+    await this.db.query(`CREATE TABLE IF NOT EXISTS public."UserTokens" (
+      tokenid SERIAL PRIMARY KEY,
+      token VARCHAR(100) NOT NULL UNIQUE,
+      userid INTEGER,
+      customerid INTEGER,
+      expires TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+      createddate TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await this.db.query(`CREATE TABLE IF NOT EXISTS public."PasswordResets" (
+      resetid SERIAL PRIMARY KEY,
+      token VARCHAR(100) NOT NULL UNIQUE,
+      userid INTEGER,
+      customerid INTEGER,
+      expires TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+      isused BOOLEAN DEFAULT false,
+      createddate TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await this.db.query(`CREATE TABLE IF NOT EXISTS public."AuditLogs" (
+      auditlogid SERIAL PRIMARY KEY,
+      timestamp TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      userid INTEGER,
+      customerid INTEGER,
+      action VARCHAR(100) NOT NULL,
+      ipaddress VARCHAR(50),
+      details TEXT
+    )`);
+    const mobile = normalizeMobile(process.env.SUPERADMIN_MOBILE || '9876543210').slice(-10);
+    const password = process.env.SUPERADMIN_PASSWORD || 'Admin@123';
+    const name = process.env.SUPERADMIN_NAME || 'Super Admin';
+    const existing = await this.db.one<{ userid: number }>(`SELECT userid FROM public."Users" WHERE role = 'SuperAdmin' OR mobile = $1 LIMIT 1`, [mobile]);
+    if (existing) {
+      console.log(`Super admin is ready. Sign in with mobile ${mobile}.`);
+      return;
+    }
+    await this.db.query(
+      `INSERT INTO public."Users" (fullname, mobile, email, passwordhash, role, failedloginattempts) VALUES ($1,$2,$3,$4,'SuperAdmin',0)`,
+      [name, mobile, 'admin@rewardspinner.local', hashPassword(password)],
+    );
+    console.log(`Created super admin. Mobile ${mobile}. Password ${password}.`);
+  }
 
   createCaptcha() {
     const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
