@@ -359,8 +359,34 @@ ALTER TABLE public."PrizeConfigurations" ADD COLUMN IF NOT EXISTS gameconfigurat
 ALTER TABLE public."PrizeConfigurations" ADD COLUMN IF NOT EXISTS spinwheelconfigurationid INTEGER;
 ALTER TABLE public."MenuItems" ADD COLUMN IF NOT EXISTS imagepath TEXT;
 ALTER TABLE public."BusinessExperienceSettings" ADD COLUMN IF NOT EXISTS reviewkeywords TEXT;
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS businesstype VARCHAR(100);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS businesstypeid INTEGER;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS businesstoken VARCHAR(50);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS logoimagepath TEXT;
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS bannerimagepath TEXT;
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS tagline VARCHAR(250);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS facebookurl VARCHAR(500);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS instagramurl VARCHAR(500);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS linkedinurl VARCHAR(500);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS twitterurl VARCHAR(500);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS youtubeurl VARCHAR(500);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS whatsappnumber VARCHAR(20);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS website VARCHAR(200);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS supportemail VARCHAR(100);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS themecolor VARCHAR(50);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS countryid INTEGER;
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS stateid INTEGER;
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS districtid INTEGER;
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS cityid INTEGER;
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS pincode VARCHAR(20);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS latitude VARCHAR(50);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS longitude VARCHAR(50);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS googlemapurl TEXT;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS googlereviewurl VARCHAR(500);
+ALTER TABLE public."QRCodes" ADD COLUMN IF NOT EXISTS code TEXT;
+ALTER TABLE public."QRCodes" ADD COLUMN IF NOT EXISTS imagepath TEXT;
+ALTER TABLE public."QRCodes" ADD COLUMN IF NOT EXISTS isactive BOOLEAN DEFAULT true;
 ALTER TABLE public."Customers" ADD COLUMN IF NOT EXISTS passwordhash TEXT;
 ALTER TABLE public."Customers" ADD COLUMN IF NOT EXISTS failedloginattempts INTEGER DEFAULT 0;
 ALTER TABLE public."Customers" ADD COLUMN IF NOT EXISTS lockoutend TIMESTAMP;
@@ -368,6 +394,8 @@ ALTER TABLE public."Users" ADD COLUMN IF NOT EXISTS failedloginattempts INTEGER 
 ALTER TABLE public."Users" ADD COLUMN IF NOT EXISTS lockoutend TIMESTAMP;
 
 DO $$
+DECLARE
+  rec record;
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
@@ -375,6 +403,33 @@ BEGIN
   ) THEN
     EXECUTE 'ALTER TABLE public."PrizeConfigurations" ALTER COLUMN spinwheelconfigurationid DROP NOT NULL';
   END IF;
+
+  FOR rec IN
+    SELECT * FROM (VALUES
+      ('Businesses', 'businessid', 'businesses_businessid_seq'),
+      ('Customers', 'customerid', 'customers_customerid_seq'),
+      ('Users', 'userid', 'users_userid_seq'),
+      ('QRCodes', 'qrcodeid', 'qrcodes_qrcodeid_seq'),
+      ('PrizeConfigurations', 'prizeconfigurationid', 'prizeconfigurations_prizeconfigurationid_seq'),
+      ('Rewards', 'rewardid', 'rewards_rewardid_seq'),
+      ('RewardRedemptions', 'rewardredemptionid', 'rewardredemptions_rewardredemptionid_seq')
+    ) AS ids(tbl, col, seq)
+  LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = rec.tbl AND column_name = rec.col AND column_default IS NULL
+    ) THEN
+      EXECUTE format('CREATE SEQUENCE IF NOT EXISTS public.%I', rec.seq);
+      EXECUTE format(
+        'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM public.%I), 0) + 1, false)',
+        'public.' || rec.seq, rec.col, rec.tbl
+      );
+      EXECUTE format(
+        'ALTER TABLE public.%I ALTER COLUMN %I SET DEFAULT nextval(%L)',
+        rec.tbl, rec.col, 'public.' || rec.seq
+      );
+    END IF;
+  END LOOP;
 END $$;
 
 INSERT INTO public."Countries" (countryname)
