@@ -2,5 +2,8 @@
   "$schema": "https://json.schemastore.org/nest-cli",
   "collection": "@nestjs/schematics",
   "sourceRoot": "src",
-  "compilerOptions": { "tsConfigPath": "tsconfig.build.json" }
+  "compilerOptions": {
+    "tsConfigPath": "tsconfig.build.json",
+    "assets": [{ "include": "database/schema.sql", "watchAssets": true }]
+  }
 }

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, OnModuleInit, UnauthorizedException } 
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes, randomUUID } from 'crypto';
 import { DatabaseService } from '../../database/database.module';
+import { SchemaService } from '../../database/schema.service';
 import { hashPassword, verifyPassword } from '../../common/utils/password.util';
 import { normalizeMobile } from '../../common/utils/validation.util';
 import { RateLimitService } from '../../common/utils/rate-limit.service';
@@ -19,10 +20,12 @@ export class AuthService implements OnModuleInit {
     private readonly db: DatabaseService,
     private readonly jwt: JwtService,
     private readonly rates: RateLimitService,
+    private readonly schema: SchemaService,
   ) {}
 
   async onModuleInit() {
     try {
+      await this.schema.apply();
       await this.ensureSuperAdmin();
     } catch (error) {
       console.error('Super admin setup failed.', error);
