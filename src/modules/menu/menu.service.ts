@@ -4,6 +4,31 @@ import { CategoryDto, ItemDto } from './dto/menu.dto';
 import { saveUpload } from '../../common/utils/files.util';
 import { validateImage } from '../../common/utils/validation.util';
 
+function splitCsv(line: string) {
+  const cells: string[] = [];
+  let current = '';
+  let quoted = false;
+  for (const char of line) {
+    if (char === '"') { quoted = !quoted; continue; }
+    if (char === ',' && !quoted) { cells.push(current.trim()); current = ''; continue; }
+    current += char;
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+export function parseMenuCsv(raw: string) {
+  const lines = raw.replace(/^\uFEFF/, '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const rows: { category: string; itemName: string; price: number; description?: string }[] = [];
+  lines.forEach((line, index) => {
+    const [category, itemName, priceText, ...rest] = splitCsv(line);
+    if (index === 0 && /category/i.test(category) && /item|name/i.test(itemName || '')) return;
+    const price = Number(String(priceText || '').replace(/[^\d.]/g, ''));
+    rows.push({ category: category || '', itemName: itemName || '', price, description: rest.join(', ').trim() || undefined });
+  });
+  return rows;
+}
+
 @Injectable()
 export class MenuService {
   constructor(private readonly db: DatabaseService) {}
@@ -67,6 +92,37 @@ export class MenuService {
     }
     if (!created) throw new BadRequestException('No valid items to insert. Check name, price, and category.');
     return { created };
+  }
+  async importFile(businessId: number, file?: Express.Multer.File) {
+    await this.ensureImageColumn();
+    const name = file?.originalname || '';
+    if (!file?.buffer?.length) throw new BadRequestException('Choose a CSV file.');
+    if (!/\.(csv|txt)$/i.test(name)) throw new BadRequestException('Upload a CSV file. In Excel, choose Save As and pick CSV.');
+    const parsed = parseMenuCsv(file.buffer.toString('utf8'));
+    const categories = await this.categories(businessId);
+    const byName = new Map(categories.map((category) => [String(category.categoryname).trim().toLowerCase(), Number(category.categoryid)]));
+    let created = 0;
+    let categoriesCreated = 0;
+    let skipped = 0;
+    for (const row of parsed) {
+      const itemName = row.itemName.trim();
+      const categoryName = row.category.trim();
+      if (!itemName || !categoryName || !(row.price > 0)) { skipped += 1; continue; }
+      let categoryId = byName.get(categoryName.toLowerCase());
+      if (!categoryId) {
+        const saved = await this.saveCategory(businessId, { categoryName, displayOrder: String(byName.size) });
+        categoryId = saved.id;
+        byName.set(categoryName.toLowerCase(), categoryId);
+        categoriesCreated += 1;
+      }
+      await this.db.query(
+        `INSERT INTO public."MenuItems" (businessid, categoryid, itemname, description, price, displayorder, isavailable, isactive) VALUES ($1,$2,$3,$4,$5,0,true,true)`,
+        [businessId, categoryId, itemName, row.description || null, row.price],
+      );
+      created += 1;
+    }
+    if (!created) throw new BadRequestException('No valid rows. Use columns: Category, Item, Price, Description.');
+    return { created, categoriesCreated, skipped };
   }
   async removeItem(businessId: number, id: number) { await this.db.query(`DELETE FROM public."MenuItems" WHERE itemid=$1 AND businessid=$2`, [id, businessId]); return { ok: true }; }
 }

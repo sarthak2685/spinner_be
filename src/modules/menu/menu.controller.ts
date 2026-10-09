@@ -26,5 +26,10 @@ export class MenuController {
   bulkItems(@CurrentUser() user: AuthUser, @Body() body: { items?: { categoryId: string | number; itemName: string; price: string | number; description?: string }[] }) {
     return this.menu.bulkItems(user.businessId!, body.items || []);
   }
+  @Post('items/import')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 1024 * 1024 } }))
+  importFile(@CurrentUser() user: AuthUser, @UploadedFile() file?: Express.Multer.File) {
+    return this.menu.importFile(user.businessId!, file);
+  }
   @Post('items/:id/delete') removeItem(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) { return this.menu.removeItem(user.businessId!, id); }
 }
