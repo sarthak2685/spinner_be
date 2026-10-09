@@ -94,18 +94,17 @@ export class RegistrationService {
   }
 
   private async seedGames(client: PoolClient, businessId: number) {
-    let rows: { gamename: string; displayname: string }[] = [];
-    try {
+    const defaults = [
+      { gamename: 'SpinWheel', displayname: 'Spin Wheel' },
+      { gamename: 'ScratchCard', displayname: 'Scratch Card' },
+      { gamename: 'MysteryGiftBox', displayname: 'Mystery Box' },
+      { gamename: 'SlotMachine', displayname: 'Slot Machine' },
+    ];
+    const catalog = await client.query(`SELECT to_regclass('public."Games"') AS name`);
+    let rows = defaults;
+    if (catalog.rows[0]?.name) {
       const games = await client.query(`SELECT gamename, displayname FROM public."Games" WHERE isactive = true ORDER BY sortorder`);
-      rows = games.rows;
-    } catch { rows = []; }
-    if (!rows.length) {
-      rows = [
-        { gamename: 'SpinWheel', displayname: 'Spin Wheel' },
-        { gamename: 'ScratchCard', displayname: 'Scratch Card' },
-        { gamename: 'MysteryGiftBox', displayname: 'Mystery Box' },
-        { gamename: 'SlotMachine', displayname: 'Slot Machine' },
-      ];
+      if (games.rows.length) rows = games.rows;
     }
     for (const game of rows) {
       const inserted = await client.query(`INSERT INTO public."GameConfigurations" (businessid, configurationname, gamecode, isactive) VALUES ($1,$2,$3,true) RETURNING gameconfigurationid`, [businessId, `Default ${game.displayname}`, game.gamename]);
