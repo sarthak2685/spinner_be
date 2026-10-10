@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { DatabaseService } from '../../database/database.module';
 import { loadConfig } from '../../config/env';
 import { fallbackReviews, reviewKeywords } from '../../common/utils/reviews.util';
+import { findBusinessByPlace } from '../../common/utils/place.util';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser, Roles } from '../../common/decorators/auth.decorators';
@@ -19,6 +20,8 @@ export class PublicService {
     this.ready ??= (async () => {
       await this.db.query(`ALTER TABLE public."BusinessExperienceSettings" ADD COLUMN IF NOT EXISTS reviewkeywords text`);
       await this.db.query(`ALTER TABLE public."MenuItems" ADD COLUMN IF NOT EXISTS imagepath text`);
+      await this.db.query(`CREATE TABLE IF NOT EXISTS public."MenuItemOptions" (optionid SERIAL PRIMARY KEY, itemid INTEGER NOT NULL REFERENCES public."MenuItems"(itemid) ON DELETE CASCADE, optionname VARCHAR(80) NOT NULL, price NUMERIC(10,2) NOT NULL, displayorder INTEGER NOT NULL DEFAULT 0)`);
+      await this.db.query(`CREATE TABLE IF NOT EXISTS public."MenuItemAddons" (addonid SERIAL PRIMARY KEY, itemid INTEGER NOT NULL REFERENCES public."MenuItems"(itemid) ON DELETE CASCADE, addonname VARCHAR(80) NOT NULL, price NUMERIC(10,2) NOT NULL, displayorder INTEGER NOT NULL DEFAULT 0)`);
       await this.db.query(`CREATE TABLE IF NOT EXISTS public."GuestReviews" (
         reviewid SERIAL PRIMARY KEY,
         businessid INTEGER NOT NULL REFERENCES public."Businesses"(businessid) ON DELETE CASCADE,
@@ -44,8 +47,8 @@ export class PublicService {
   }
 
   private async business(token: string) {
-    const row = await this.db.one(`SELECT * FROM public."Businesses" WHERE businesstoken=$1 AND isactive=true`, [token]);
-    if (!row) throw new NotFoundException('Business not found or is currently inactive.');
+    const row = await findBusinessByPlace<{ businessid: number; businessname: string; tagline?: string; googlereviewurl?: string; isactive?: boolean }>(this.db, token);
+    if (!row || row.isactive === false) throw new NotFoundException('Business not found or is currently inactive.');
     return row as { businessid: number; businessname: string; tagline?: string; googlereviewurl?: string };
   }
 
@@ -66,8 +69,23 @@ export class PublicService {
     const hub = await this.hub(token);
     const businessId = (hub.business as { businessid: number }).businessid;
     const categories = await this.db.many(`SELECT * FROM public."MenuCategories" WHERE businessid=$1 AND isactive=true ORDER BY displayorder, categoryname`, [businessId]);
-    const items = await this.db.many(`SELECT * FROM public."MenuItems" WHERE businessid=$1 AND isactive=true AND isavailable=true ORDER BY displayorder, itemname`, [businessId]);
-    return { ...hub, categories, items };
+    const items = await this.db.many<{ itemid: number }>(`SELECT * FROM public."MenuItems" WHERE businessid=$1 AND isactive=true AND isavailable=true ORDER BY displayorder, itemname`, [businessId]);
+    const ids = items.map((item) => item.itemid);
+    const [options, addons, offers] = await Promise.all([
+      ids.length ? this.db.many(`SELECT optionid, itemid, optionname, price FROM public."MenuItemOptions" WHERE itemid = ANY($1::int[]) ORDER BY displayorder, optionid`, [ids]) : [],
+      ids.length ? this.db.many(`SELECT addonid, itemid, addonname, price FROM public."MenuItemAddons" WHERE itemid = ANY($1::int[]) ORDER BY displayorder, addonid`, [ids]) : [],
+      this.db.many(`SELECT rewardid, rewardname, description, coinsrequired, imagepath FROM public."Rewards" WHERE businessid=$1 AND isactive=true ORDER BY coinsrequired`, [businessId]),
+    ]);
+    return {
+      ...hub,
+      categories,
+      offers,
+      items: items.map((item) => ({
+        ...item,
+        options: options.filter((row) => row.itemid === item.itemid),
+        addons: addons.filter((row) => row.itemid === item.itemid),
+      })),
+    };
   }
 
   async generate(body: ReviewBody) {

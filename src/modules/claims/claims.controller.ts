@@ -8,6 +8,16 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser, Roles } from '../../common/decorators/auth.decorators';
 import { AuthUser } from '../../common/auth-user';
 
+@Controller('public')
+export class PublicClaimsController {
+  constructor(private readonly claims: ClaimsService) {}
+  @Post('claims')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } }))
+  create(@Body() body: ClaimDto & { customerName?: string; mobile?: string }, @UploadedFile() file?: Express.Multer.File) {
+    return this.claims.publicCreate(body, file);
+  }
+}
+
 @Controller()
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ClaimsController {

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.module';
 import { numOrNull, saveUpload, writeQr } from '../../common/utils/files.util';
+import { ensurePlaceColumn, uniqueBusinessSlug } from '../../common/utils/place.util';
 import { hashPassword } from '../../common/utils/password.util';
 import { isValidEmail, isValidMobile, normalizeMobile, validateImage } from '../../common/utils/validation.util';
 import { loadConfig } from '../../config/env';
@@ -41,6 +42,7 @@ export class BusinessService {
     const banner = bannerFile?.size ? bannerFile : undefined;
     const imageError = validateImage(logo) || validateImage(banner);
     if (imageError) throw new BadRequestException(imageError);
+    if (!String(input.address || '').trim() || !Number(input.countryId) || !Number(input.stateId)) throw new BadRequestException('Address, country, and state are required.');
     const logoPath = logo ? await saveUpload(logo, 'logos') : null;
     const bannerPath = banner ? await saveUpload(banner, 'banners') : null;
     await this.db.query(
@@ -163,6 +165,7 @@ export class BusinessService {
   }
 
   async qr(businessId: number) {
+    await this.ensurePublicSlug(businessId, false);
     const [code, settings, business] = await Promise.all([
       this.db.one(`SELECT * FROM public."QRCodes" WHERE businessid = $1 ORDER BY createddate DESC LIMIT 1`, [businessId]),
       this.db.one(`SELECT * FROM public."BusinessExperienceSettings" WHERE businessid = $1`, [businessId]),
@@ -171,11 +174,24 @@ export class BusinessService {
     return { code, settings, business };
   }
 
-  async regenerateQr(businessId: number) {
-    const business = await this.db.one<{ businesstoken: string }>(`SELECT businesstoken FROM public."Businesses" WHERE businessid = $1`, [businessId]);
+  private async ensurePublicSlug(businessId: number, refresh: boolean) {
+    await ensurePlaceColumn(this.db);
+    const business = await this.db.one<{ businessname: string; publicslug: string | null }>(`SELECT businessname, publicslug FROM public."Businesses" WHERE businessid = $1`, [businessId]);
     if (!business) throw new NotFoundException('Business not found.');
-    const image = await writeQr(business.businesstoken);
-    await this.db.query(`UPDATE public."QRCodes" SET imagepath = $1, qrcodetext = $2 WHERE businessid = $3`, [image, `${loadConfig().publicWebUrl}/play/${business.businesstoken}`, businessId]);
+    if (business.publicslug && !refresh) return business.publicslug;
+    const slug = await uniqueBusinessSlug(this.db, business.businessname, businessId);
+    await this.db.query(`UPDATE public."Businesses" SET publicslug = $1 WHERE businessid = $2`, [slug, businessId]);
+    const image = await writeQr(slug);
+    const text = `${loadConfig().publicWebUrl}/play/${slug}`;
+    const updated = await this.db.query(`UPDATE public."QRCodes" SET imagepath = $1, qrcodetext = $2 WHERE businessid = $3`, [image, text, businessId]);
+    if (!updated.rowCount) {
+      await this.db.query(`INSERT INTO public."QRCodes" (businessid, qrname, qrcodetext, code, imagepath, isactive) VALUES ($1,'Permanent QR Code',$2,$3,$4,true)`, [businessId, text, slug, image]);
+    }
+    return slug;
+  }
+
+  async regenerateQr(businessId: number) {
+    await this.ensurePublicSlug(businessId, true);
     return this.qr(businessId);
   }
 
@@ -191,29 +207,52 @@ export class BusinessService {
   }
 
   async explore(query: Record<string, string>) {
+    await ensurePlaceColumn(this.db);
     const params: unknown[] = [];
-    let sql = `SELECT b.businessid, b.businessname, b.businesstype, b.logoimagepath, b.bannerimagepath, b.businesstoken,
+    let sql = `SELECT b.businessid, b.businessname, b.businesstype, b.logoimagepath, b.bannerimagepath, b.businesstoken, b.publicslug, b.address,
       COALESCE(c.cityname, 'Unknown') as cityname, COALESCE(s.statename, 'Unknown') as statename,
       (SELECT string_agg(DISTINCT gc.gamecode, ', ') FROM public."GameConfigurations" gc WHERE gc.businessid = b.businessid AND gc.isactive = true) as active_games,
       (SELECT COUNT(1) FROM public."Rewards" r WHERE r.businessid = b.businessid AND r.isactive = true) as active_offers
+      ${query.near === '1' && Number.isFinite(Number(query.lat)) && Number.isFinite(Number(query.lng)) ? `,
+      CASE WHEN b.latitude ~ '^-?[0-9]+(\\.[0-9]+)?$' AND b.longitude ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN
+        round((6371 * acos(LEAST(1::float8, GREATEST(-1::float8,
+          cos(radians(${Number(query.lat)})) * cos(radians(b.latitude::float8)) * cos(radians(b.longitude::float8) - radians(${Number(query.lng)}))
+          + sin(radians(${Number(query.lat)})) * sin(radians(b.latitude::float8))
+        ))))::numeric, 1)
+      END as distancekm` : ', NULL::numeric as distancekm'}
       FROM public."Businesses" b
       LEFT JOIN public."States" s ON b.stateid = s.stateid
       LEFT JOIN public."Cities" c ON b.cityid = c.cityid
+      LEFT JOIN public."Districts" d ON b.districtid = d.districtid
       WHERE b.isactive = true`;
     const add = (clause: string, value: unknown) => { params.push(value); sql += ` ${clause.replace('?', `$${params.length}`)}`; };
     if (query.search) add('AND LOWER(b.businessname) LIKE ?', `%${query.search.toLowerCase()}%`);
+    if (query.place) {
+      const like = `%${query.place.toLowerCase()}%`;
+      params.push(like);
+      const index = params.length;
+      sql += ` AND (LOWER(COALESCE(b.address, '')) LIKE $${index} OR LOWER(COALESCE(c.cityname, '')) LIKE $${index} OR LOWER(COALESCE(s.statename, '')) LIKE $${index} OR LOWER(COALESCE(d.districtname, '')) LIKE $${index})`;
+    }
     if (query.category && query.category !== 'All') add('AND b.businesstype = ?', query.category);
     if (Number(query.countryId)) add('AND b.countryid = ?', Number(query.countryId));
     if (Number(query.stateId)) add('AND b.stateid = ?', Number(query.stateId));
     if (Number(query.districtId)) add('AND b.districtid = ?', Number(query.districtId));
     if (Number(query.cityId)) add('AND b.cityid = ?', Number(query.cityId));
     if (query.game && query.game !== 'All') add('AND EXISTS(SELECT 1 FROM public."GameConfigurations" gc WHERE gc.businessid = b.businessid AND gc.isactive = true AND gc.gamecode = ?)', query.game);
-    sql += ' ORDER BY b.businessname';
+    if (query.near === '1' && Number.isFinite(Number(query.lat)) && Number.isFinite(Number(query.lng))) {
+      sql += ` AND b.latitude ~ '^-?[0-9]+(\\.[0-9]+)?$' AND b.longitude ~ '^-?[0-9]+(\\.[0-9]+)?$'
+        AND (6371 * acos(LEAST(1::float8, GREATEST(-1::float8,
+          cos(radians(${Number(query.lat)})) * cos(radians(b.latitude::float8)) * cos(radians(b.longitude::float8) - radians(${Number(query.lng)}))
+          + sin(radians(${Number(query.lat)})) * sin(radians(b.latitude::float8))
+        )))) <= 30`;
+    }
+    sql += query.near === '1' ? ' ORDER BY distancekm NULLS LAST, b.businessname' : ' ORDER BY b.businessname';
     const categories = await this.db.many(`SELECT DISTINCT businesstype FROM public."Businesses" WHERE businesstype IS NOT NULL AND businesstype <> '' AND isactive = true ORDER BY businesstype`);
     return { businesses: await this.db.many(sql, params), categories };
   }
 
   async details(id: number) {
+    await ensurePlaceColumn(this.db);
     const business = await this.db.one(`SELECT b.*, c.cityname, s.statename, d.districtname FROM public."Businesses" b
       LEFT JOIN public."Cities" c ON c.cityid = b.cityid LEFT JOIN public."States" s ON s.stateid = b.stateid LEFT JOIN public."Districts" d ON d.districtid = b.districtid
       WHERE b.businessid = $1 AND b.isactive = true`, [id]);

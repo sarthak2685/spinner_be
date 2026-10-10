@@ -9,10 +9,7 @@ export function isValidEmail(email: string): boolean {
 export function normalizeMobile(mobile: string): string {
   if (!mobile || !mobile.trim()) return '';
   const digits = mobile.replace(/\D/g, '');
-  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
-  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
-  if (digits.length > 10) return digits.slice(-10);
-  return digits;
+  return digits.length === 10 ? digits : '';
 }
 
 export function isValidMobile(mobile: string): boolean {

@@ -358,10 +358,33 @@ CREATE TABLE IF NOT EXISTS public."GuestFeedback" (
 ALTER TABLE public."PrizeConfigurations" ADD COLUMN IF NOT EXISTS gameconfigurationid INTEGER;
 ALTER TABLE public."PrizeConfigurations" ADD COLUMN IF NOT EXISTS spinwheelconfigurationid INTEGER;
 ALTER TABLE public."MenuItems" ADD COLUMN IF NOT EXISTS imagepath TEXT;
+
+CREATE TABLE IF NOT EXISTS public."MenuItemOptions" (
+  optionid SERIAL PRIMARY KEY,
+  itemid INTEGER NOT NULL REFERENCES public."MenuItems"(itemid) ON DELETE CASCADE,
+  optionname VARCHAR(80) NOT NULL,
+  price NUMERIC(10,2) NOT NULL,
+  displayorder INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS public."MenuItemAddons" (
+  addonid SERIAL PRIMARY KEY,
+  itemid INTEGER NOT NULL REFERENCES public."MenuItems"(itemid) ON DELETE CASCADE,
+  addonname VARCHAR(80) NOT NULL,
+  price NUMERIC(10,2) NOT NULL,
+  displayorder INTEGER NOT NULL DEFAULT 0
+);
+
+ALTER TABLE public."Orders" ADD COLUMN IF NOT EXISTS fulfillment VARCHAR(20) DEFAULT 'DineIn';
+ALTER TABLE public."Orders" ADD COLUMN IF NOT EXISTS deliveryaddress TEXT;
+ALTER TABLE public."OrderItems" ADD COLUMN IF NOT EXISTS optionname VARCHAR(80);
+ALTER TABLE public."OrderItems" ADD COLUMN IF NOT EXISTS addons TEXT;
 ALTER TABLE public."BusinessExperienceSettings" ADD COLUMN IF NOT EXISTS reviewkeywords TEXT;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS businesstype VARCHAR(100);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS businesstypeid INTEGER;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS businesstoken VARCHAR(50);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS publicslug VARCHAR(80);
+CREATE UNIQUE INDEX IF NOT EXISTS businesses_publicslug_lower ON public."Businesses" (lower(publicslug)) WHERE publicslug IS NOT NULL AND publicslug <> '';
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS logoimagepath TEXT;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS bannerimagepath TEXT;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS tagline VARCHAR(250);
@@ -444,3 +467,20 @@ VALUES
 ('Clinic & Healthcare', 'CLINIC', 'SERVICES & TREATMENTS', 'Treatments • Consultations', '🩺', 'Healthcare', 'Services & Consultations', 'Department', 'Treatment / Consultation', 'Cabin / Patient ID', 'e.g., Cabin 3', 'Book Appointment', true, 4),
 ('Retail & Boutique', 'RETAIL', 'PRODUCT CATALOG', 'Browse Products • Shop', '🛍', 'Product Catalog', 'Product Catalog', 'Product Category', 'Product / Item', 'Counter / Pickup Spot', 'e.g., Counter 1', 'Place Order', true, 5)
 ON CONFLICT (typename) DO NOTHING;
+
+INSERT INTO public."States" (countryid, statename)
+SELECT c.countryid, s.name
+FROM public."Countries" c
+CROSS JOIN (VALUES
+  ('Andaman and Nicobar Islands'), ('Andhra Pradesh'), ('Arunachal Pradesh'), ('Assam'), ('Bihar'),
+  ('Chandigarh'), ('Chhattisgarh'), ('Dadra and Nagar Haveli and Daman and Diu'), ('Delhi'), ('Goa'),
+  ('Gujarat'), ('Haryana'), ('Himachal Pradesh'), ('Jammu and Kashmir'), ('Jharkhand'), ('Karnataka'),
+  ('Kerala'), ('Ladakh'), ('Lakshadweep'), ('Madhya Pradesh'), ('Maharashtra'), ('Manipur'), ('Meghalaya'),
+  ('Mizoram'), ('Nagaland'), ('Odisha'), ('Puducherry'), ('Punjab'), ('Rajasthan'), ('Sikkim'),
+  ('Tamil Nadu'), ('Telangana'), ('Tripura'), ('Uttar Pradesh'), ('Uttarakhand'), ('West Bengal')
+) AS s(name)
+WHERE c.countryname = 'India'
+AND NOT EXISTS (
+  SELECT 1 FROM public."States" st
+  WHERE st.countryid = c.countryid AND LOWER(st.statename) = LOWER(s.name)
+);

@@ -18,16 +18,30 @@ export function isOrderStatus(value: string): value is OrderStatus {
   return (ORDER_STATUSES as readonly string[]).includes(value);
 }
 
+export const FULFILLMENTS = ['DineIn', 'Delivery', 'Pickup'] as const;
+export type Fulfillment = (typeof FULFILLMENTS)[number];
+
 export interface CartLine {
   itemId: number;
   qty: number;
+  optionId?: number;
+  addonIds?: number[];
 }
 
-export function consolidateCart(items: CartLine[]): Map<number, number> {
-  const map = new Map<number, number>();
+export function lineKey(item: CartLine) {
+  const addons = [...(item.addonIds || [])].filter((id) => id > 0).sort((a, b) => a - b).join('.');
+  return `${item.itemId}:${Number(item.optionId) || 0}:${addons}`;
+}
+
+export function consolidateCart(items: CartLine[]): Map<string, CartLine> {
+  const map = new Map<string, CartLine>();
   for (const item of items || []) {
     if (!item || item.itemId <= 0 || item.qty <= 0) continue;
-    map.set(item.itemId, (map.get(item.itemId) || 0) + item.qty);
+    const key = lineKey(item);
+    const prev = map.get(key);
+    const addonIds = [...(item.addonIds || [])].filter((id) => id > 0);
+    if (prev) prev.qty += item.qty;
+    else map.set(key, { itemId: item.itemId, qty: item.qty, optionId: Number(item.optionId) || undefined, addonIds });
   }
   return map;
 }

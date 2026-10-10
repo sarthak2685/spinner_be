@@ -2,8 +2,10 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { randomBytes } from 'crypto';
 import { DatabaseService } from '../../database/database.module';
 import { AuthUser } from '../../common/auth-user';
-import { assertQuantity, buildOrderNumber, consolidateCart, isOrderStatus, statusFromCommand, whatsappOrderUrl } from '../../common/utils/orders.util';
+import { assertQuantity, buildOrderNumber, consolidateCart, FULFILLMENTS, Fulfillment, isOrderStatus, statusFromCommand, whatsappOrderUrl } from '../../common/utils/orders.util';
+import { isValidMobile, normalizeMobile } from '../../common/utils/validation.util';
 import { sanitizeHtml } from '../../common/utils/sanitize.util';
+import { findBusinessByPlace } from '../../common/utils/place.util';
 import { PlaceOrderDto } from './dto/orders.dto';
 import { PageQuery, pageParams, pageResult } from '../../common/utils/paging.util';
 
@@ -67,59 +69,99 @@ export class OrdersService {
   }
 
   async place(user: AuthUser | null, body: PlaceOrderDto) {
-    const station = sanitizeHtml(body.tableNumber).trim();
-    if (!station) throw new BadRequestException('Room No. / Table No. is required before placing your order.');
+    const mobile = normalizeMobile(body.customerMobile || '');
+    if (!isValidMobile(mobile)) throw new BadRequestException('Enter the customer mobile as 10 digits.');
+    const fulfillment = (FULFILLMENTS as readonly string[]).includes(body.fulfillment || '') ? body.fulfillment as Fulfillment : null;
+    if (!fulfillment) throw new BadRequestException('Choose dine in, delivery, or pickup.');
+    const station = sanitizeHtml(body.tableNumber || '').trim().slice(0, 100);
+    const address = sanitizeHtml(body.deliveryAddress || '').trim().slice(0, 300);
+    if (fulfillment === 'DineIn' && !station) throw new BadRequestException('Table or room number is required for dine in.');
+    if (fulfillment === 'Delivery' && !address) throw new BadRequestException('Delivery address is required.');
     const cart = consolidateCart(body.items || []);
     if (!cart.size) throw new BadRequestException('Your cart is empty.');
-    const business = await this.db.one<{ businessid: number; businessname: string; isactive: boolean; whatsappnumber: string | null }>(`SELECT businessid, businessname, isactive, whatsappnumber FROM public."Businesses" WHERE businesstoken=$1`, [body.token]);
+    const business = await findBusinessByPlace<{ businessid: number; businessname: string; isactive: boolean; whatsappnumber: string | null }>(this.db, body.token);
     if (!business || business.isactive === false) throw new NotFoundException('Business not found or inactive.');
     const givenName = sanitizeHtml(body.customerName || '').trim().slice(0, 200);
     let customerId = user?.role === 'Customer' ? user.id : 0;
     let guest: AuthUser | null = null;
     let customerName = givenName || (user?.role === 'Customer' ? user.name : '');
-    if (!customerId) {
-      const guestName = givenName || `Guest_${randomBytes(4).toString('hex').slice(0, 8)}`;
-      const created = await this.db.one<{ customerid: number }>(`INSERT INTO public."Customers" (businessid, customername, totalcoins) VALUES ($1,$2,0) RETURNING customerid`, [business.businessid, guestName]);
-      customerId = created!.customerid;
-      customerName = guestName;
-      guest = { id: customerId, role: 'Customer', name: guestName, businessId: business.businessid, businessToken: body.token, kind: 'customer' };
-    } else if (givenName) {
-      await this.db.query(`UPDATE public."Customers" SET customername=$1 WHERE customerid=$2 AND customername LIKE 'Guest_%'`, [givenName, customerId]);
-      customerName = givenName;
+    if (customerId) {
+      await this.db.query(`UPDATE public."Customers" SET mobile=$1, customername=CASE WHEN $2 <> '' AND customername LIKE 'Guest_%' THEN $2 ELSE customername END WHERE customerid=$3`, [mobile, givenName, customerId]);
+      if (givenName) customerName = givenName;
+    } else {
+      const existing = await this.db.one<{ customerid: number; customername: string }>(`SELECT customerid, customername FROM public."Customers" WHERE businessid=$1 AND (mobile=$2 OR RIGHT(COALESCE(mobile, ''), 10)=$2) ORDER BY customerid LIMIT 1`, [business.businessid, mobile]);
+      if (existing) {
+        customerId = existing.customerid;
+        customerName = givenName || existing.customername;
+        if (givenName) await this.db.query(`UPDATE public."Customers" SET customername=$1, mobile=$2 WHERE customerid=$3 AND (customername IS NULL OR customername LIKE 'Guest_%')`, [givenName, mobile, customerId]);
+        else await this.db.query(`UPDATE public."Customers" SET mobile=$1 WHERE customerid=$2`, [mobile, customerId]);
+      } else {
+        const guestName = givenName || `Guest_${randomBytes(4).toString('hex').slice(0, 8)}`;
+        const created = await this.db.one<{ customerid: number }>(`INSERT INTO public."Customers" (businessid, customername, mobile, totalcoins) VALUES ($1,$2,$3,0) RETURNING customerid`, [business.businessid, guestName, mobile]);
+        customerId = created!.customerid;
+        customerName = guestName;
+        guest = { id: customerId, role: 'Customer', name: guestName, businessId: business.businessid, businessToken: body.token, kind: 'customer' };
+      }
     }
-    const lines: { itemId: number; name: string; price: number; qty: number; subtotal: number }[] = [];
+    const lines: { itemId: number; name: string; price: number; qty: number; subtotal: number; optionName: string | null; addons: string | null }[] = [];
     let total = 0;
-    for (const [itemId, qty] of cart) {
-      const bad = assertQuantity(qty);
+    for (const line of cart.values()) {
+      const bad = assertQuantity(line.qty);
       if (bad) throw new BadRequestException(bad);
-      const item = await this.db.one<{ itemname: string; price: string; isavailable: boolean; isactive: boolean }>(`SELECT itemname, price, isavailable, isactive FROM public."MenuItems" WHERE itemid=$1 AND businessid=$2`, [itemId, business.businessid]);
+      const item = await this.db.one<{ itemname: string; price: string; isavailable: boolean; isactive: boolean }>(`SELECT itemname, price, isavailable, isactive FROM public."MenuItems" WHERE itemid=$1 AND businessid=$2`, [line.itemId, business.businessid]);
       if (!item) throw new BadRequestException('Menu item not found or does not belong to this business.');
       if (!item.isactive || !item.isavailable) throw new BadRequestException(`Item '${item.itemname}' is currently unavailable.`);
-      const price = Number(item.price);
-      if (!(price > 0)) throw new BadRequestException('Invalid item price in menu configuration.');
-      const subtotal = price * qty;
+      let unit = Number(item.price);
+      let optionName: string | null = null;
+      if (line.optionId) {
+        const option = await this.db.one<{ optionname: string; price: string }>(`SELECT optionname, price FROM public."MenuItemOptions" WHERE optionid=$1 AND itemid=$2`, [line.optionId, line.itemId]);
+        if (!option) throw new BadRequestException(`Choose a valid option for ${item.itemname}.`);
+        unit = Number(option.price);
+        optionName = option.optionname;
+      } else {
+        const optionCount = await this.db.scalar<string>(`SELECT COUNT(1)::text FROM public."MenuItemOptions" WHERE itemid=$1`, [line.itemId]);
+        if (Number(optionCount) > 0) throw new BadRequestException(`Choose an option for ${item.itemname}.`);
+      }
+      const addonNames: string[] = [];
+      for (const addonId of line.addonIds || []) {
+        const addon = await this.db.one<{ addonname: string; price: string }>(`SELECT addonname, price FROM public."MenuItemAddons" WHERE addonid=$1 AND itemid=$2`, [addonId, line.itemId]);
+        if (!addon) throw new BadRequestException(`Choose a valid add-on for ${item.itemname}.`);
+        unit += Number(addon.price);
+        addonNames.push(addon.addonname);
+      }
+      if (!(unit > 0)) throw new BadRequestException('Invalid item price in menu configuration.');
+      const subtotal = unit * line.qty;
       total += subtotal;
-      lines.push({ itemId, name: item.itemname, price, qty, subtotal });
+      const label = [item.itemname, optionName ? `(${optionName})` : '', addonNames.length ? `+ ${addonNames.join(', ')}` : ''].filter(Boolean).join(' ').slice(0, 200);
+      lines.push({ itemId: line.itemId, name: label, price: unit, qty: line.qty, subtotal, optionName, addons: addonNames.join(', ') || null });
     }
+    const where = fulfillment === 'DineIn' ? station : fulfillment === 'Delivery' ? address.slice(0, 100) : 'Pickup';
+    const note = sanitizeHtml(body.remarks || '').trim().slice(0, 500);
     const orderNumber = await this.db.tx(async (client) => {
       const date = new Date();
       const prefix = `RS-${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}-`;
       const count = await client.query(`SELECT COUNT(1) + 1 AS seq FROM public."Orders" WHERE ordernumber LIKE $1`, [`${prefix}%`]);
       const number = buildOrderNumber(date, Number(count.rows[0].seq));
-      const order = await client.query(`INSERT INTO public."Orders" (ordernumber, businessid, customerid, totalamount, status, remarks, tablenumber, createddate, updateddate) VALUES ($1,$2,$3,$4,'Pending',$5,$6,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) RETURNING orderid`, [number, business.businessid, customerId, total, sanitizeHtml(body.remarks || '').trim() || null, station]);
+      const order = await client.query(
+        `INSERT INTO public."Orders" (ordernumber, businessid, customerid, totalamount, status, remarks, tablenumber, fulfillment, deliveryaddress, createddate, updateddate) VALUES ($1,$2,$3,$4,'Pending',$5,$6,$7,$8,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) RETURNING orderid`,
+        [number, business.businessid, customerId, total, note || null, where, fulfillment, fulfillment === 'Delivery' ? address : null],
+      );
       for (const line of lines) {
-        await client.query(`INSERT INTO public."OrderItems" (orderid, itemid, itemname, unitprice, quantity, subtotal, createddate) VALUES ($1,$2,$3,$4,$5,$6,CURRENT_TIMESTAMP)`, [order.rows[0].orderid, line.itemId, line.name, line.price, line.qty, line.subtotal]);
+        await client.query(`INSERT INTO public."OrderItems" (orderid, itemid, itemname, unitprice, quantity, subtotal, optionname, addons, createddate) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CURRENT_TIMESTAMP)`, [order.rows[0].orderid, line.itemId, line.name, line.price, line.qty, line.subtotal, line.optionName, line.addons]);
       }
-      await client.query(`INSERT INTO public."CustomerNotifications" (customerid, businessid, title, message, notificationtype, isread, createddate) VALUES ($1,$2,$3,$4,'OrderUpdate',false,CURRENT_TIMESTAMP)`, [customerId, business.businessid, `Order Received: ${number}`, `Your order of ₹${total.toFixed(2)} for ${station} with ${business.businessname} has been received and is pending confirmation.`]);
+      await client.query(`INSERT INTO public."CustomerNotifications" (customerid, businessid, title, message, notificationtype, isread, createddate) VALUES ($1,$2,$3,$4,'OrderUpdate',false,CURRENT_TIMESTAMP)`, [customerId, business.businessid, `Order Received: ${number}`, `Your ${fulfillment === 'DineIn' ? 'dine-in' : fulfillment === 'Delivery' ? 'delivery' : 'pickup'} order of ₹${total.toFixed(2)} with ${business.businessname} is pending confirmation.`]);
       return number;
     });
-    const note = sanitizeHtml(body.remarks || '').trim();
+    const serviceLabel = fulfillment === 'DineIn' ? 'Dine in' : fulfillment === 'Delivery' ? 'Delivery' : 'Pickup';
     const linesText = lines.map((line, index) => `${index + 1}. *${line.name}*\n   Qty: ${line.qty} × ₹${line.price.toFixed(2)} = ₹${line.subtotal.toFixed(2)}`).join('\n');
     const message = [
       `🛒 *New Order for ${business.businessname}*`,
       '',
       `🧾 *Order:* ${orderNumber}`,
-      `🪑 *Table/Room:* ${station}`,
+      `📦 *Service:* ${serviceLabel}`,
+      fulfillment === 'DineIn' ? `🪑 *Table/Room:* ${station}` : '',
+      fulfillment === 'Delivery' ? `📍 *Address:* ${address}` : '',
+      `📱 *Mobile:* ${mobile}`,
       customerName ? `👤 *Name:* ${customerName}` : '',
       '',
       '📋 *Order Details:*',
@@ -128,13 +170,14 @@ export class OrdersService {
       '',
       '──────────────────',
       `💰 *Total: ₹${total.toFixed(2)}*`,
-      note ? `\n📝 *Note:*\n${note}` : '',
+      note ? `\n📝 *Special instructions:*\n${note}` : '',
     ].filter((line) => line !== '').join('\n');
     return {
       success: true,
       orderNumber,
       total,
-      tableNumber: station,
+      tableNumber: where,
+      fulfillment,
       businessName: business.businessname,
       status: 'Pending',
       message: 'Order placed successfully!',

@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { randomBytes } from 'crypto';
 import { PoolClient } from 'pg';
 import { DatabaseService } from '../../database/database.module';
 import { AuthService } from '../auth/auth.service';
@@ -8,10 +7,9 @@ import { hashPassword } from '../../common/utils/password.util';
 import { isValidEmail, isValidMobile, normalizeMobile, validateImage } from '../../common/utils/validation.util';
 import { defaultPrizes } from '../../common/utils/spin.util';
 import { numOrNull, saveUpload, writeQr } from '../../common/utils/files.util';
+import { findBusinessByPlace, uniqueBusinessSlug } from '../../common/utils/place.util';
 import { loadConfig } from '../../config/env';
 import { BusinessRegisterDto, CustomerRegisterDto, ProfileDto } from './dto/registration.dto';
-
-const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
 @Injectable()
 export class RegistrationService {
@@ -35,21 +33,15 @@ export class RegistrationService {
     return Number(customers) > 0;
   }
 
-  private async nextToken() {
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const bytes = randomBytes(9);
-      let body = '';
-      for (let i = 0; i < 9; i++) body += ALPHABET[bytes[i] % ALPHABET.length];
-      const token = `biz_${body}`;
-      const exists = await this.db.scalar(`SELECT 1 FROM public."Businesses" WHERE businesstoken = $1`, [token]);
-      if (!exists) return token;
-    }
-    throw new BadRequestException('Could not allocate a business token.');
+  private nextSlug(name: string) {
+    return uniqueBusinessSlug(this.db, name);
   }
 
   async registerBusiness(input: BusinessRegisterDto, file?: Express.Multer.File) {
     const ownerMobile = normalizeMobile(input.ownerMobile || '');
-    if (!input.businessName || !input.phone || !input.email || !input.address) throw new BadRequestException('Complete the business details before continuing.');
+    if (!input.businessName || !input.phone || !input.email || !String(input.address || '').trim()) throw new BadRequestException('Complete the business details before continuing.');
+    if (!Number(input.countryId) || !Number(input.stateId)) throw new BadRequestException('Country, state, and address are required.');
+    if (input.termsAccepted !== 'on' && input.termsAccepted !== 'true') throw new BadRequestException('Accept the terms and privacy policy to create a business.');
     if (!isValidEmail(input.email) || !isValidEmail(input.ownerEmail)) throw new BadRequestException('Enter a valid email address.');
     if (!isValidMobile(ownerMobile)) throw new BadRequestException('Please enter a valid 10-digit mobile number.');
     if ((input.password || '').length < 6) throw new BadRequestException('Password must be at least 6 characters long.');
@@ -58,13 +50,13 @@ export class RegistrationService {
     const imageError = validateImage(file);
     if (imageError) throw new BadRequestException(imageError);
     const logo = file ? await saveUpload(file, 'logos') : null;
-    const token = await this.nextToken();
+    const token = await this.nextSlug(input.businessName);
     const typeId = Number(input.businessTypeId || 0);
     const type = typeId ? await this.db.one<{ typename: string; stationlabel: string; stationplaceholder: string; catalogtitle: string }>(`SELECT typename, stationlabel, stationplaceholder, catalogtitle FROM public."BusinessTypes" WHERE businesstypeid = $1`, [typeId]) : null;
     const created = await this.db.tx(async (client) => {
       const biz = await client.query(
-        `INSERT INTO public."Businesses" (businessname, businesstype, businesstypeid, phone, email, address, businesstoken, logoimagepath, countryid, stateid, districtid, cityid, pincode, isactive)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true) RETURNING businessid`,
+        `INSERT INTO public."Businesses" (businessname, businesstype, businesstypeid, phone, email, address, businesstoken, publicslug, logoimagepath, countryid, stateid, districtid, cityid, pincode, isactive)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,true) RETURNING businessid`,
         [input.businessName, type?.typename || input.businessType || null, typeId || null, input.phone, input.email, input.address, token, logo, numOrNull(input.countryId), numOrNull(input.stateId), numOrNull(input.districtId), numOrNull(input.cityId), input.pincode || null],
       );
       const businessId = biz.rows[0].businessid as number;
@@ -124,7 +116,7 @@ export class RegistrationService {
     if (cleanMobile.length !== 10) throw new BadRequestException('Please enter a valid 10-digit mobile number.');
     if (!input.password) throw new BadRequestException('Password is required.');
     if (input.password.length < 6) throw new BadRequestException('Password must be at least 6 characters.');
-    const business = input.token ? await this.db.one<{ businessid: number; businesstoken: string; isactive: boolean }>(`SELECT businessid, businesstoken, isactive FROM public."Businesses" WHERE businesstoken = $1`, [input.token]) : null;
+    const business = input.token ? await findBusinessByPlace<{ businessid: number; businesstoken: string; isactive: boolean }>(this.db, input.token) : null;
     if (input.token && (!business || business.isactive === false)) throw new BadRequestException('Business not found or is currently inactive.');
     const guestId = Number(input.guestId || (guest?.name?.startsWith('Guest_') ? guest.id : 0));
     if (await this.mobileTaken(cleanMobile, null, guestId || null)) throw new BadRequestException('This mobile number is already registered. Please log in with your password.');
@@ -151,6 +143,7 @@ export class RegistrationService {
     const email = (input.email || '').trim();
     if (email && !isValidEmail(email)) throw new BadRequestException('Enter a valid email address.');
     if (email && await this.emailTaken(email, null, customerId)) throw new BadRequestException('This email address is already associated with another account.');
+    if (!String(input.address || '').trim()) throw new BadRequestException('Address is required.');
     await this.db.query(`UPDATE public."Customers" SET customername=$1, email=$2, countryid=$3, stateid=$4, districtid=$5, cityid=$6, address=$7, pincode=$8 WHERE customerid=$9`, [input.name, email ? email.toLowerCase() : null, numOrNull(input.countryId), numOrNull(input.stateId), numOrNull(input.districtId), numOrNull(input.cityId), input.address || null, input.pincode || null, customerId]);
     return this.profile(customerId);
   }

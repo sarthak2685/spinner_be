@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.module';
 import { saveUpload } from '../../common/utils/files.util';
-import { validateImage } from '../../common/utils/validation.util';
+import { findBusinessByPlace } from '../../common/utils/place.util';
+import { isValidMobile, normalizeMobile, validateImage } from '../../common/utils/validation.util';
 import { ClaimDto } from './dto/claims.dto';
 import { PageQuery, pageParams, pageResult } from '../../common/utils/paging.util';
 
@@ -54,7 +55,7 @@ export class ClaimsService {
     });
   }
   async create(customerId: number, input: ClaimDto, file?: Express.Multer.File) {
-    const business = input.token ? await this.db.one<{ businessid: number; isactive: boolean }>(`SELECT businessid, isactive FROM public."Businesses" WHERE businesstoken=$1`, [input.token]) : null;
+    const business = input.token ? await findBusinessByPlace<{ businessid: number; isactive: boolean }>(this.db, input.token) : null;
     const businessId = business?.businessid || Number(input.businessId);
     if (!businessId) throw new BadRequestException('Choose a business for this claim.');
     const amount = Number(input.amount);
@@ -65,5 +66,25 @@ export class ClaimsService {
     const coins = Number(input.coins || Math.floor(amount));
     const row = await this.db.one<{ purchaseclaimid: number }>(`INSERT INTO public."PurchaseClaims" (customerid, businessid, purchaseamount, coins, invoicenumber, remarks, billimagepath, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'Pending') RETURNING purchaseclaimid`, [customerId, businessId, amount, coins, input.invoiceNumber || null, input.remarks || null, bill]);
     return { id: row!.purchaseclaimid };
+  }
+
+  async publicCreate(input: ClaimDto & { customerName?: string; mobile?: string }, file?: Express.Multer.File) {
+    const business = await findBusinessByPlace<{ businessid: number; isactive: boolean }>(this.db, input.token || '');
+    if (!business || business.isactive === false) throw new NotFoundException('Business not found or inactive.');
+    const mobile = normalizeMobile(input.mobile || '');
+    if (!isValidMobile(mobile)) throw new BadRequestException('Enter a 10-digit mobile number.');
+    const name = String(input.customerName || '').trim().slice(0, 200);
+    if (!name) throw new BadRequestException('Enter your name.');
+    const amount = Number(input.amount);
+    if (!(amount > 0)) throw new BadRequestException('Enter the bill amount.');
+    const imageError = validateImage(file);
+    if (imageError) throw new BadRequestException(imageError);
+    const bill = file?.size ? await saveUpload(file, 'bills') : null;
+    const existing = await this.db.one<{ customerid: number }>(`SELECT customerid FROM public."Customers" WHERE businessid=$1 AND (mobile=$2 OR RIGHT(COALESCE(mobile, ''), 10)=$2) ORDER BY customerid LIMIT 1`, [business.businessid, mobile]);
+    const customerId = existing?.customerid || (await this.db.one<{ customerid: number }>(`INSERT INTO public."Customers" (businessid, customername, mobile, totalcoins) VALUES ($1,$2,$3,0) RETURNING customerid`, [business.businessid, name, mobile]))!.customerid;
+    if (existing) await this.db.query(`UPDATE public."Customers" SET customername=COALESCE(NULLIF(customername, ''), $1), mobile=$2 WHERE customerid=$3`, [name, mobile, customerId]);
+    const coins = Math.floor(amount);
+    const row = await this.db.one<{ purchaseclaimid: number }>(`INSERT INTO public."PurchaseClaims" (customerid, businessid, purchaseamount, coins, invoicenumber, remarks, billimagepath, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'Pending') RETURNING purchaseclaimid`, [customerId, business.businessid, amount, coins, input.invoiceNumber || null, input.remarks || null, bill]);
+    return { id: row!.purchaseclaimid, message: 'Bill submitted. The shop will confirm your coins.' };
   }
 }

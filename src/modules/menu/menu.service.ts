@@ -17,6 +17,17 @@ function splitCsv(line: string) {
   return cells;
 }
 
+export function parsePricedList(raw?: string) {
+  if (!raw || !raw.trim()) return [] as { name: string; price: number }[];
+  let rows: unknown = [];
+  try { rows = JSON.parse(raw); } catch { return []; }
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    const entry = row as { name?: string; price?: string | number };
+    return { name: String(entry?.name || '').trim().slice(0, 80), price: Number(entry?.price) };
+  }).filter((row) => row.name && row.price >= 0 && Number.isFinite(row.price));
+}
+
 export function parseMenuCsv(raw: string) {
   const lines = raw.replace(/^\uFEFF/, '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const rows: { category: string; itemName: string; price: number; description?: string }[] = [];
@@ -37,7 +48,35 @@ export class MenuService {
   private async ensureImageColumn() {
     if (this.ensured) return;
     await this.db.query(`ALTER TABLE public."MenuItems" ADD COLUMN IF NOT EXISTS imagepath text`);
+    await this.db.query(`CREATE TABLE IF NOT EXISTS public."MenuItemOptions" (optionid SERIAL PRIMARY KEY, itemid INTEGER NOT NULL REFERENCES public."MenuItems"(itemid) ON DELETE CASCADE, optionname VARCHAR(80) NOT NULL, price NUMERIC(10,2) NOT NULL, displayorder INTEGER NOT NULL DEFAULT 0)`);
+    await this.db.query(`CREATE TABLE IF NOT EXISTS public."MenuItemAddons" (addonid SERIAL PRIMARY KEY, itemid INTEGER NOT NULL REFERENCES public."MenuItems"(itemid) ON DELETE CASCADE, addonname VARCHAR(80) NOT NULL, price NUMERIC(10,2) NOT NULL, displayorder INTEGER NOT NULL DEFAULT 0)`);
     this.ensured = true;
+  }
+
+  private async withExtras<T extends { itemid: number }>(items: T[]) {
+    if (!items.length) return items.map((item) => ({ ...item, options: [], addons: [] }));
+    const ids = items.map((item) => item.itemid);
+    const [options, addons] = await Promise.all([
+      this.db.many(`SELECT optionid, itemid, optionname, price, displayorder FROM public."MenuItemOptions" WHERE itemid = ANY($1::int[]) ORDER BY displayorder, optionid`, [ids]),
+      this.db.many(`SELECT addonid, itemid, addonname, price, displayorder FROM public."MenuItemAddons" WHERE itemid = ANY($1::int[]) ORDER BY displayorder, addonid`, [ids]),
+    ]);
+    return items.map((item) => ({
+      ...item,
+      options: options.filter((row) => row.itemid === item.itemid),
+      addons: addons.filter((row) => row.itemid === item.itemid),
+    }));
+  }
+
+  private async replaceExtras(itemId: number, options: { name: string; price: number }[], addons: { name: string; price: number }[]) {
+    await this.db.query(`DELETE FROM public."MenuItemOptions" WHERE itemid=$1`, [itemId]);
+    await this.db.query(`DELETE FROM public."MenuItemAddons" WHERE itemid=$1`, [itemId]);
+    for (const [index, option] of options.entries()) {
+      if (!(option.price > 0)) throw new BadRequestException(`Option "${option.name}" needs a price above zero.`);
+      await this.db.query(`INSERT INTO public."MenuItemOptions" (itemid, optionname, price, displayorder) VALUES ($1,$2,$3,$4)`, [itemId, option.name, option.price, index]);
+    }
+    for (const [index, addon] of addons.entries()) {
+      await this.db.query(`INSERT INTO public."MenuItemAddons" (itemid, addonname, price, displayorder) VALUES ($1,$2,$3,$4)`, [itemId, addon.name, addon.price, index]);
+    }
   }
 
   categories(businessId: number) { return this.db.many(`SELECT * FROM public."MenuCategories" WHERE businessid = $1 ORDER BY displayorder, categoryname`, [businessId]); }
@@ -52,28 +91,37 @@ export class MenuService {
   async removeCategory(businessId: number, id: number) { await this.db.query(`DELETE FROM public."MenuCategories" WHERE categoryid=$1 AND businessid=$2`, [id, businessId]); return { ok: true }; }
   async items(businessId: number, categoryId?: number) {
     await this.ensureImageColumn();
-    if (categoryId) return this.db.many(`SELECT * FROM public."MenuItems" WHERE businessid=$1 AND categoryid=$2 ORDER BY displayorder, itemname`, [businessId, categoryId]);
-    return this.db.many(`SELECT * FROM public."MenuItems" WHERE businessid=$1 ORDER BY displayorder, itemname`, [businessId]);
+    const rows = categoryId
+      ? await this.db.many<{ itemid: number }>(`SELECT * FROM public."MenuItems" WHERE businessid=$1 AND categoryid=$2 ORDER BY displayorder, itemname`, [businessId, categoryId])
+      : await this.db.many<{ itemid: number }>(`SELECT * FROM public."MenuItems" WHERE businessid=$1 ORDER BY displayorder, itemname`, [businessId]);
+    return this.withExtras(rows);
   }
   async saveItem(businessId: number, input: ItemDto, file?: Express.Multer.File) {
     await this.ensureImageColumn();
-    const price = Number(input.price);
+    const options = parsePricedList(input.options);
+    const addons = parsePricedList(input.addons);
+    const price = options.length ? Math.min(...options.map((option) => option.price)) : Number(input.price);
     if (!(price > 0)) throw new BadRequestException('Price must be greater than zero.');
     const imageError = validateImage(file);
     if (imageError) throw new BadRequestException(imageError);
     const image = file?.size ? await saveUpload(file, 'menu') : null;
-    if (input.id) {
+    let itemId = Number(input.id || 0);
+    if (itemId) {
+      const owned = await this.db.one(`SELECT itemid FROM public."MenuItems" WHERE itemid=$1 AND businessid=$2`, [itemId, businessId]);
+      if (!owned) throw new BadRequestException('Menu item not found.');
       await this.db.query(
         `UPDATE public."MenuItems" SET categoryid=$1, itemname=$2, description=$3, price=$4, displayorder=$5, isavailable=$6, isactive=$7, imagepath=COALESCE($8, imagepath), updateddate=CURRENT_TIMESTAMP WHERE itemid=$9 AND businessid=$10`,
-        [Number(input.categoryId), input.itemName, input.description || null, price, Number(input.displayOrder || 0), input.isAvailable !== 'false', input.isActive !== 'false', image, Number(input.id), businessId],
+        [Number(input.categoryId), input.itemName, input.description || null, price, Number(input.displayOrder || 0), input.isAvailable !== 'false', input.isActive !== 'false', image, itemId, businessId],
       );
-      return { id: Number(input.id) };
+    } else {
+      const row = await this.db.one<{ itemid: number }>(
+        `INSERT INTO public."MenuItems" (businessid, categoryid, itemname, description, price, displayorder, isavailable, isactive, imagepath) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING itemid`,
+        [businessId, Number(input.categoryId), input.itemName, input.description || null, price, Number(input.displayOrder || 0), input.isAvailable !== 'false', input.isActive !== 'false', image],
+      );
+      itemId = row!.itemid;
     }
-    const row = await this.db.one<{ itemid: number }>(
-      `INSERT INTO public."MenuItems" (businessid, categoryid, itemname, description, price, displayorder, isavailable, isactive, imagepath) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING itemid`,
-      [businessId, Number(input.categoryId), input.itemName, input.description || null, price, Number(input.displayOrder || 0), input.isAvailable !== 'false', input.isActive !== 'false', image],
-    );
-    return { id: row!.itemid };
+    if (input.options !== undefined || input.addons !== undefined) await this.replaceExtras(itemId, options, addons);
+    return { id: itemId };
   }
   async bulkItems(businessId: number, items: { categoryId: string | number; itemName: string; price: string | number; description?: string }[]) {
     await this.ensureImageColumn();

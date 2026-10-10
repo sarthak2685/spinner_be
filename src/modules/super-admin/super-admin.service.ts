@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.module';
+import { ensurePlaceColumn } from '../../common/utils/place.util';
 import { BusinessTypeDto } from './dto/super-admin.dto';
 
 @Injectable()
@@ -17,8 +18,9 @@ export class SuperAdminService {
     return { totalBusinesses: Number(businesses), totalCustomers: Number(customers), totalSpins: Number(spins), totalRedemptions: Number(redemptions), recent };
   }
 
-  businesses() {
-    return this.db.many(`SELECT businessid, businessname, businesstype, phone, email, logoimagepath, isactive, createddate, businesstoken FROM public."Businesses" ORDER BY createddate DESC`);
+  async businesses() {
+    await ensurePlaceColumn(this.db);
+    return this.db.many(`SELECT businessid, businessname, businesstype, phone, email, logoimagepath, isactive, createddate, businesstoken, publicslug FROM public."Businesses" ORDER BY createddate DESC`);
   }
 
   async setActive(id: number, isActive: boolean) {

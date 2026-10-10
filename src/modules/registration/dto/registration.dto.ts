@@ -14,6 +14,7 @@ export class BusinessRegisterDto {
   districtId?: string;
   cityId?: string;
   pincode?: string;
+  termsAccepted?: string;
 }
 
 export class CustomerRegisterDto {

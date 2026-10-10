@@ -4,6 +4,7 @@ import { DatabaseService } from '../../database/database.module';
 import { AuthService } from '../auth/auth.service';
 import { AuthUser } from '../../common/auth-user';
 import { pickPrizeIndex } from '../../common/utils/spin.util';
+import { findBusinessByPlace } from '../../common/utils/place.util';
 import { RateLimitService } from '../../common/utils/rate-limit.service';
 import { PrizeDto } from './dto/games.dto';
 
@@ -39,7 +40,7 @@ export class GamesService {
 
   async play(token: string, gameCode: string, user: AuthUser | null, ip: string) {
     if (this.rates.check(ip, 'PlayGame', 10, 1)) throw new BadRequestException('Too many requests. Please try again later.');
-    const business = await this.db.one<{ businessid: number; isactive: boolean }>(`SELECT businessid, isactive FROM public."Businesses" WHERE businesstoken=$1`, [token]);
+    const business = await findBusinessByPlace<{ businessid: number; isactive: boolean }>(this.db, token);
     if (!business || business.isactive === false) throw new NotFoundException('Business not found or is currently inactive.');
     const prizes = await this.db.many<{ prizeconfigurationid: number; prizename: string; coins: number; winningpercentage: number; gamecode: string }>(
       `SELECT p.prizeconfigurationid, p.prizename, p.coins, p.winningpercentage, s.gamecode FROM public."PrizeConfigurations" p INNER JOIN public."GameConfigurations" s ON p.gameconfigurationid=s.gameconfigurationid WHERE s.businessid=$1 AND s.gamecode=$2 AND s.isactive=true AND p.isactive=true ORDER BY p.prizeconfigurationid`,
