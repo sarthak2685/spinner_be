@@ -3,6 +3,7 @@ import { segmentSql } from './segments.util';
 describe('campaign segments', () => {
   it('keeps each audience on its original query', () => {
     expect(segmentSql('All')).toMatch(/"Customers"/);
+    expect(segmentSql('All')).toMatch(/GamePlays/);
     expect(segmentSql('ScannedQR')).toMatch(/GamePlays/);
     expect(segmentSql('Registered')).toMatch(/passwordhash IS NOT NULL/);
     expect(segmentSql('WalletBalance')).toMatch(/totalcoins > 0/);

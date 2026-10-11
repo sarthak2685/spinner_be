@@ -7,6 +7,7 @@ import { hashPassword, verifyPassword } from '../../common/utils/password.util';
 import { normalizeMobile } from '../../common/utils/validation.util';
 import { RateLimitService } from '../../common/utils/rate-limit.service';
 import { planGuestMerge } from '../../common/utils/guest-merge.util';
+import { PLAY_COUNT_SQL, keptGuestPlays } from '../../common/utils/plays.util';
 import { AuthUser } from '../../common/auth-user';
 import { ForgotDto, LoginDto, ResetDto } from './dto/auth.dto';
 
@@ -211,11 +212,32 @@ export class AuthService implements OnModuleInit {
   async mergeGuest(guestId: number, loginId: number) {
     if (!planGuestMerge(guestId, loginId)) return;
     await this.db.tx(async (client) => {
-      const coins = await client.query(`SELECT totalcoins FROM public."Customers" WHERE customerid = $1`, [guestId]);
-      const guestCoins = Number(coins.rows[0]?.totalcoins || 0);
-      if (guestCoins > 0) await client.query(`UPDATE public."Customers" SET totalcoins = totalcoins + $1 WHERE customerid = $2`, [guestCoins, loginId]);
+      const mobileRow = await client.query<{ mobile: string | null }>(`SELECT mobile FROM public."Customers" WHERE customerid = $1`, [loginId]);
+      const digits = String(mobileRow.rows[0]?.mobile || '').replace(/\D/g, '');
+      const mobile = digits.length >= 10 ? digits.slice(-10) : '';
+      const plays = await client.query<{ gameplayid: number; businessid: number; coinswon: number }>(`SELECT gameplayid, businessid, coinswon FROM public."GamePlays" WHERE customerid = $1 ORDER BY gameplayid`, [guestId]);
+      const byShop = new Map<number, { gameplayid: number; coinswon: number }[]>();
+      for (const row of plays.rows) {
+        const shopId = Number(row.businessid);
+        const list = byShop.get(shopId) || [];
+        list.push({ gameplayid: Number(row.gameplayid), coinswon: Number(row.coinswon || 0) });
+        byShop.set(shopId, list);
+      }
+      let keepCoins = 0;
+      const dropIds: number[] = [];
+      for (const [shopId, list] of byShop) {
+        const existing = await client.query<{ n: string }>(PLAY_COUNT_SQL, [shopId, loginId, mobile, guestId]);
+        const split = keptGuestPlays(Number(existing.rows[0]?.n || 0), list);
+        keepCoins += split.keep.reduce((sum, row) => sum + row.coinswon, 0);
+        split.drop.forEach((row) => dropIds.push(row.gameplayid));
+      }
+      if (dropIds.length) await client.query(`DELETE FROM public."GamePlays" WHERE gameplayid = ANY($1::int[])`, [dropIds]);
       await client.query(`UPDATE public."GamePlays" SET customerid = $1 WHERE customerid = $2`, [loginId, guestId]);
-      await client.query(`UPDATE public."WalletTransactions" SET customerid = $1 WHERE customerid = $2`, [loginId, guestId]);
+      await client.query(`DELETE FROM public."WalletTransactions" WHERE customerid = $1`, [guestId]);
+      if (keepCoins > 0) {
+        await client.query(`UPDATE public."Customers" SET totalcoins = totalcoins + $1 WHERE customerid = $2`, [keepCoins, loginId]);
+        await client.query(`INSERT INTO public."WalletTransactions" (customerid, coins, transactiontype, description) VALUES ($1,$2,'Add',$3)`, [loginId, keepCoins, 'Guest plays kept at sign-in']);
+      }
       await client.query(`DELETE FROM public."Customers" WHERE customerid = $1`, [guestId]);
     });
   }

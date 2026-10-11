@@ -9,6 +9,16 @@ describe('review copy', () => {
     expect(reviewKeywords('', 'The best coffee shop in the entire city')).toContain('friendly staff');
   });
 
+  it('uses salon words for a salon and keeps food words off that list', () => {
+    const words = reviewKeywords('', 'Best cuts in town', 'Salon, Spa & Beauty');
+    expect(words).toContain('skilled stylist');
+    expect(words.join(' ')).not.toMatch(/tasty|spicy|great food/);
+  });
+
+  it('uses food words for a restaurant', () => {
+    expect(reviewKeywords('', '', 'Restaurant / Cafe')).toContain('great food');
+  });
+
   it('writes three reviews that name the shop', () => {
     const reviews = fallbackReviews('Sahil Cafe', ['coffee']);
     expect(reviews).toHaveLength(3);

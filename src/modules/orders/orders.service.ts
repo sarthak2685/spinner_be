@@ -6,12 +6,14 @@ import { assertQuantity, buildOrderNumber, consolidateCart, FULFILLMENTS, Fulfil
 import { isValidMobile, normalizeMobile } from '../../common/utils/validation.util';
 import { sanitizeHtml } from '../../common/utils/sanitize.util';
 import { findBusinessByPlace } from '../../common/utils/place.util';
+import { assertShopOpen } from '../../common/utils/term.util';
 import { PlaceOrderDto } from './dto/orders.dto';
 import { PageQuery, pageParams, pageResult } from '../../common/utils/paging.util';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService, private readonly notes: NotificationsService) {}
 
   async list(businessId: number, status?: string, query: PageQuery = {}) {
     const { page, pageSize, from, to, offset } = pageParams(query);
@@ -64,7 +66,10 @@ export class OrdersService {
     const detail = await this.detail(businessId, orderId);
     const order = detail.order as { ordernumber: string; customerid: number; businessname: string };
     await this.db.query(`UPDATE public."Orders" SET status=$1, updateddate=CURRENT_TIMESTAMP WHERE orderid=$2 AND businessid=$3`, [status, orderId, businessId]);
-    await this.db.query(`INSERT INTO public."CustomerNotifications" (customerid, businessid, title, message, notificationtype, isread, createddate) VALUES ($1,$2,$3,$4,'OrderUpdate',false,CURRENT_TIMESTAMP)`, [order.customerid, businessId, `Order Update: ${order.ordernumber}`, `Your order ${order.ordernumber} at ${order.businessname} is now '${status}'.`]);
+    const title = `Order update: ${order.ordernumber}`;
+    const message = `Your order at ${order.businessname} is now ${status}.`;
+    await this.db.query(`INSERT INTO public."CustomerNotifications" (customerid, businessid, title, message, notificationtype, isread, createddate) VALUES ($1,$2,$3,$4,'OrderUpdate',false,CURRENT_TIMESTAMP)`, [order.customerid, businessId, title, message]);
+    await this.notes.alertCustomers([order.customerid], title, message, '/customer/my-orders', `order-${orderId}-${status}`);
     return { ok: true, status, message: `Order ${order.ordernumber} marked as '${status}'.` };
   }
 
@@ -79,8 +84,9 @@ export class OrdersService {
     if (fulfillment === 'Delivery' && !address) throw new BadRequestException('Delivery address is required.');
     const cart = consolidateCart(body.items || []);
     if (!cart.size) throw new BadRequestException('Your cart is empty.');
-    const business = await findBusinessByPlace<{ businessid: number; businessname: string; isactive: boolean; whatsappnumber: string | null }>(this.db, body.token);
+    const business = await findBusinessByPlace<{ businessid: number; businessname: string; isactive: boolean; whatsappnumber: string | null; activeto?: string | null }>(this.db, body.token);
     if (!business || business.isactive === false) throw new NotFoundException('Business not found or inactive.');
+    assertShopOpen(business);
     const givenName = sanitizeHtml(body.customerName || '').trim().slice(0, 200);
     let customerId = user?.role === 'Customer' ? user.id : 0;
     let guest: AuthUser | null = null;
@@ -149,15 +155,18 @@ export class OrdersService {
       for (const line of lines) {
         await client.query(`INSERT INTO public."OrderItems" (orderid, itemid, itemname, unitprice, quantity, subtotal, optionname, addons, createddate) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CURRENT_TIMESTAMP)`, [order.rows[0].orderid, line.itemId, line.name, line.price, line.qty, line.subtotal, line.optionName, line.addons]);
       }
-      await client.query(`INSERT INTO public."CustomerNotifications" (customerid, businessid, title, message, notificationtype, isread, createddate) VALUES ($1,$2,$3,$4,'OrderUpdate',false,CURRENT_TIMESTAMP)`, [customerId, business.businessid, `Order Received: ${number}`, `Your ${fulfillment === 'DineIn' ? 'dine-in' : fulfillment === 'Delivery' ? 'delivery' : 'pickup'} order of ₹${total.toFixed(2)} with ${business.businessname} is pending confirmation.`]);
-      return number;
+      const title = `Order received: ${number}`;
+      const message = `Your ${fulfillment === 'DineIn' ? 'dine-in' : fulfillment === 'Delivery' ? 'delivery' : 'pickup'} order of ₹${total.toFixed(2)} at ${business.businessname} is waiting for the counter.`;
+      await client.query(`INSERT INTO public."CustomerNotifications" (customerid, businessid, title, message, notificationtype, isread, createddate) VALUES ($1,$2,$3,$4,'OrderUpdate',false,CURRENT_TIMESTAMP)`, [customerId, business.businessid, title, message]);
+      return { number, title, message };
     });
+    await this.notes.alertCustomers([customerId], orderNumber.title, orderNumber.message, '/customer/my-orders', `order-${orderNumber.number}`);
     const serviceLabel = fulfillment === 'DineIn' ? 'Dine in' : fulfillment === 'Delivery' ? 'Delivery' : 'Pickup';
     const linesText = lines.map((line, index) => `${index + 1}. *${line.name}*\n   Qty: ${line.qty} × ₹${line.price.toFixed(2)} = ₹${line.subtotal.toFixed(2)}`).join('\n');
     const message = [
       `🛒 *New Order for ${business.businessname}*`,
       '',
-      `🧾 *Order:* ${orderNumber}`,
+      `🧾 *Order:* ${orderNumber.number}`,
       `📦 *Service:* ${serviceLabel}`,
       fulfillment === 'DineIn' ? `🪑 *Table/Room:* ${station}` : '',
       fulfillment === 'Delivery' ? `📍 *Address:* ${address}` : '',
@@ -174,7 +183,7 @@ export class OrdersService {
     ].filter((line) => line !== '').join('\n');
     return {
       success: true,
-      orderNumber,
+      orderNumber: orderNumber.number,
       total,
       tableNumber: where,
       fulfillment,

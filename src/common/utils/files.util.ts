@@ -17,7 +17,7 @@ export async function writeQr(token: string) {
   const dir = path.join(process.cwd(), 'uploads', 'qr');
   await fs.mkdir(dir, { recursive: true });
   const file = `${token}.png`;
-  await QRCode.toFile(path.join(dir, file), `${loadConfig().publicWebUrl}/play/${token}`, { width: 480, margin: 1 });
+  await QRCode.toFile(path.join(dir, file), `${loadConfig().publicWebUrl}/play/${token}`, { width: 640, margin: 1, errorCorrectionLevel: 'H' });
   return `/uploads/qr/${file}`;
 }
 

@@ -21,6 +21,16 @@ export function segmentSql(segment: string): string {
     case 'PendingClaims':
       return `SELECT DISTINCT pc.customerid FROM public."PurchaseClaims" pc WHERE pc.businessid = $1 AND pc.status = 'Pending'`;
     default:
-      return 'SELECT customerid FROM public."Customers" WHERE businessid = $1';
+      return `SELECT DISTINCT customerid FROM (
+        SELECT customerid FROM public."Customers" WHERE businessid = $1
+        UNION
+        SELECT customerid FROM public."GamePlays" WHERE businessid = $1
+        UNION
+        SELECT customerid FROM public."Orders" WHERE businessid = $1
+        UNION
+        SELECT customerid FROM public."PurchaseClaims" WHERE businessid = $1
+        UNION
+        SELECT customerid FROM public."WalletTransactions" WHERE businessid = $1
+      ) visitors WHERE customerid IS NOT NULL`;
   }
 }

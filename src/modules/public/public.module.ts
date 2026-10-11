@@ -1,15 +1,19 @@
-import { Body, Controller, Get, Injectable, Module, NotFoundException, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Injectable, Module, NotFoundException, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseService } from '../../database/database.module';
 import { loadConfig } from '../../config/env';
 import { fallbackReviews, reviewKeywords } from '../../common/utils/reviews.util';
 import { findBusinessByPlace } from '../../common/utils/place.util';
+import { assertShopOpen } from '../../common/utils/term.util';
+import { isValidEmail, isValidMobile, normalizeMobile } from '../../common/utils/validation.util';
+import { sendDemoMail } from '../../common/utils/mail.util';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser, Roles } from '../../common/decorators/auth.decorators';
 import { AuthUser } from '../../common/auth-user';
 
 type ReviewBody = { token?: string; customerName?: string; keywords?: string[]; rating?: number; body?: string; phone?: string; email?: string; message?: string };
+type DemoBody = { name?: string; mobile?: string; email?: string; businessName?: string; businessType?: string; city?: string };
 
 @Injectable()
 export class PublicService {
@@ -47,8 +51,9 @@ export class PublicService {
   }
 
   private async business(token: string) {
-    const row = await findBusinessByPlace<{ businessid: number; businessname: string; tagline?: string; googlereviewurl?: string; isactive?: boolean }>(this.db, token);
+    const row = await findBusinessByPlace<{ businessid: number; businessname: string; tagline?: string; googlereviewurl?: string; isactive?: boolean; activeto?: string | null }>(this.db, token);
     if (!row || row.isactive === false) throw new NotFoundException('Business not found or is currently inactive.');
+    assertShopOpen(row);
     return row as { businessid: number; businessname: string; tagline?: string; googlereviewurl?: string };
   }
 
@@ -62,7 +67,10 @@ export class PublicService {
       this.db.one(`SELECT qrcodetext, imagepath FROM public."QRCodes" WHERE businessid=$1 ORDER BY createddate DESC LIMIT 1`, [business.businessid]),
     ]);
     const experience = (settings || {}) as { reviewkeywords?: string };
-    return { business, settings, type, games, qr, keywords: reviewKeywords(experience.reviewkeywords, business.tagline) };
+    const kind = type as { typename?: string; typecode?: string } | null;
+    const place = business as { tagline?: string; businesstype?: string };
+    const businessType = [kind?.typecode, kind?.typename, place.businesstype].filter(Boolean).join(' ');
+    return { business, settings, type, games, qr, keywords: reviewKeywords(experience.reviewkeywords, place.tagline, businessType) };
   }
 
   async catalog(token: string) {
@@ -129,7 +137,7 @@ export class PublicService {
     const hub = await this.hub(body.token || '');
     const businessId = (hub.business as { businessid: number }).businessid;
     const rating = Math.min(5, Math.max(1, Number(body.rating || 5)));
-    await this.db.query(`INSERT INTO public."GuestReviews" (businessid, customername, rating, body, aigenerated) VALUES ($1,$2,$3,$4,true)`, [businessId, (body.customerName || 'Guest').slice(0, 200), rating, (body.body || '').slice(0, 2000)]);
+    await this.db.query(`INSERT INTO public."GuestReviews" (businessid, customername, rating, body, aigenerated) VALUES ($1,$2,$3,$4,true)`, [businessId, (body.customerName || '').trim().slice(0, 200), rating, (body.body || '').slice(0, 2000)]);
     return { ok: true };
   }
 
@@ -143,7 +151,47 @@ export class PublicService {
   }
 
   reviews(businessId: number) {
-    return this.ensure().then(() => this.db.many(`SELECT * FROM public."GuestReviews" WHERE businessid=$1 ORDER BY createddate DESC`, [businessId]));
+    return this.ensure().then(() => this.db.many(`SELECT * FROM public."GuestReviews" WHERE businessid=$1 AND btrim(COALESCE(customername, '')) <> '' ORDER BY createddate DESC`, [businessId]));
+  }
+
+  private async ensureDemos() {
+    await this.db.query(`CREATE TABLE IF NOT EXISTS public."DemoRequests" (
+      demorequestid SERIAL PRIMARY KEY,
+      contactname VARCHAR(200) NOT NULL,
+      mobile VARCHAR(20) NOT NULL,
+      email VARCHAR(150) NOT NULL,
+      businessname VARCHAR(200) NOT NULL,
+      businesstype VARCHAR(100),
+      city VARCHAR(100),
+      createddate TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+  }
+
+  async saveDemo(body: DemoBody) {
+    const name = String(body.name || '').trim().slice(0, 200);
+    const mobile = normalizeMobile(body.mobile || '');
+    const email = String(body.email || '').trim().slice(0, 150);
+    const businessName = String(body.businessName || '').trim().slice(0, 200);
+    if (!name || !businessName) throw new BadRequestException('Name and business are required.');
+    if (!isValidMobile(mobile)) throw new BadRequestException('Enter a 10-digit mobile number.');
+    if (!isValidEmail(email)) throw new BadRequestException('Enter a valid email address.');
+    await this.ensureDemos();
+    await this.db.query(
+      `INSERT INTO public."DemoRequests" (contactname, mobile, email, businessname, businesstype, city) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [name, mobile, email, businessName, String(body.businessType || '').trim().slice(0, 100) || null, String(body.city || '').trim().slice(0, 100) || null],
+    );
+    let mailed = false;
+    try {
+      mailed = await sendDemoMail({ name, mobile, email, businessName, businessType: body.businessType, city: body.city });
+    } catch {
+      mailed = false;
+    }
+    return { ok: true, mailed };
+  }
+
+  async demos() {
+    await this.ensureDemos();
+    return this.db.many(`SELECT * FROM public."DemoRequests" ORDER BY createddate DESC`);
   }
 
   feedback(businessId: number) {
@@ -167,6 +215,7 @@ export class PublicController {
   @Post('reviews/generate') generate(@Body() body: ReviewBody) { return this.pub.generate(body); }
   @Post('reviews') saveReview(@Body() body: ReviewBody) { return this.pub.saveReview(body); }
   @Post('feedback') saveFeedback(@Body() body: ReviewBody) { return this.pub.saveFeedback(body); }
+  @Post('demos') demos(@Body() body: DemoBody) { return this.pub.saveDemo(body); }
 }
 
 @Controller()

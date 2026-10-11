@@ -8,6 +8,7 @@ import { isValidEmail, isValidMobile, normalizeMobile, validateImage } from '../
 import { defaultPrizes } from '../../common/utils/spin.util';
 import { numOrNull, saveUpload, writeQr } from '../../common/utils/files.util';
 import { findBusinessByPlace, uniqueBusinessSlug } from '../../common/utils/place.util';
+import { activeDays, ensureTermColumn } from '../../common/utils/term.util';
 import { loadConfig } from '../../config/env';
 import { BusinessRegisterDto, CustomerRegisterDto, ProfileDto } from './dto/registration.dto';
 
@@ -37,7 +38,7 @@ export class RegistrationService {
     return uniqueBusinessSlug(this.db, name);
   }
 
-  async registerBusiness(input: BusinessRegisterDto, file?: Express.Multer.File) {
+  async registerBusiness(input: BusinessRegisterDto, file?: Express.Multer.File, options?: { activeDays?: number }) {
     const ownerMobile = normalizeMobile(input.ownerMobile || '');
     if (!input.businessName || !input.phone || !input.email || !String(input.address || '').trim()) throw new BadRequestException('Complete the business details before continuing.');
     if (!Number(input.countryId) || !Number(input.stateId)) throw new BadRequestException('Country, state, and address are required.');
@@ -50,14 +51,16 @@ export class RegistrationService {
     const imageError = validateImage(file);
     if (imageError) throw new BadRequestException(imageError);
     const logo = file ? await saveUpload(file, 'logos') : null;
+    await ensureTermColumn(this.db);
+    const days = activeDays(options?.activeDays, 7);
     const token = await this.nextSlug(input.businessName);
     const typeId = Number(input.businessTypeId || 0);
     const type = typeId ? await this.db.one<{ typename: string; stationlabel: string; stationplaceholder: string; catalogtitle: string }>(`SELECT typename, stationlabel, stationplaceholder, catalogtitle FROM public."BusinessTypes" WHERE businesstypeid = $1`, [typeId]) : null;
     const created = await this.db.tx(async (client) => {
       const biz = await client.query(
-        `INSERT INTO public."Businesses" (businessname, businesstype, businesstypeid, phone, email, address, businesstoken, publicslug, logoimagepath, countryid, stateid, districtid, cityid, pincode, isactive)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,true) RETURNING businessid`,
-        [input.businessName, type?.typename || input.businessType || null, typeId || null, input.phone, input.email, input.address, token, logo, numOrNull(input.countryId), numOrNull(input.stateId), numOrNull(input.districtId), numOrNull(input.cityId), input.pincode || null],
+        `INSERT INTO public."Businesses" (businessname, businesstype, businesstypeid, phone, email, address, businesstoken, publicslug, logoimagepath, countryid, stateid, districtid, cityid, pincode, isactive, activeto)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,true, CURRENT_TIMESTAMP + ($14::int * INTERVAL '1 day')) RETURNING businessid`,
+        [input.businessName, type?.typename || input.businessType || null, typeId || null, input.phone, input.email, input.address, token, logo, numOrNull(input.countryId), numOrNull(input.stateId), numOrNull(input.districtId), numOrNull(input.cityId), input.pincode || null, days],
       );
       const businessId = biz.rows[0].businessid as number;
       await client.query(

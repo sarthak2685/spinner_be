@@ -5,6 +5,8 @@ import { AuthService } from '../auth/auth.service';
 import { AuthUser } from '../../common/auth-user';
 import { pickPrizeIndex } from '../../common/utils/spin.util';
 import { findBusinessByPlace } from '../../common/utils/place.util';
+import { PLAY_COUNT_SQL, SHOP_PLAY_LIMIT } from '../../common/utils/plays.util';
+import { assertShopOpen } from '../../common/utils/term.util';
 import { RateLimitService } from '../../common/utils/rate-limit.service';
 import { PrizeDto } from './dto/games.dto';
 
@@ -40,13 +42,23 @@ export class GamesService {
 
   async play(token: string, gameCode: string, user: AuthUser | null, ip: string) {
     if (this.rates.check(ip, 'PlayGame', 10, 1)) throw new BadRequestException('Too many requests. Please try again later.');
-    const business = await findBusinessByPlace<{ businessid: number; isactive: boolean }>(this.db, token);
+    const business = await findBusinessByPlace<{ businessid: number; isactive: boolean; activeto?: string | null }>(this.db, token);
     if (!business || business.isactive === false) throw new NotFoundException('Business not found or is currently inactive.');
+    assertShopOpen(business);
     const prizes = await this.db.many<{ prizeconfigurationid: number; prizename: string; coins: number; winningpercentage: number; gamecode: string }>(
       `SELECT p.prizeconfigurationid, p.prizename, p.coins, p.winningpercentage, s.gamecode FROM public."PrizeConfigurations" p INNER JOIN public."GameConfigurations" s ON p.gameconfigurationid=s.gameconfigurationid WHERE s.businessid=$1 AND s.gamecode=$2 AND s.isactive=true AND p.isactive=true ORDER BY p.prizeconfigurationid`,
       [business.businessid, gameCode || 'SpinWheel'],
     );
     if (!prizes.length) throw new BadRequestException('Prizes are not configured for this game campaign.');
+    const customerIdForCount = user?.role === 'Customer' ? user.id : 0;
+    let mobileKey = '';
+    if (customerIdForCount) {
+      const who = await this.db.one<{ mobile: string | null }>(`SELECT mobile FROM public."Customers" WHERE customerid=$1`, [customerIdForCount]);
+      const digits = String(who?.mobile || '').replace(/\D/g, '');
+      mobileKey = digits.length >= 10 ? digits.slice(-10) : '';
+    }
+    const used = Number(await this.db.scalar<string>(PLAY_COUNT_SQL, [business.businessid, customerIdForCount, mobileKey, 0]) || 0);
+    if (used >= SHOP_PLAY_LIMIT) throw new BadRequestException('You have used both plays at this shop.');
     const index = pickPrizeIndex(prizes, Math.random() * 100);
     const prize = prizes[index];
     let customerId = 0;

@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ShopTermGuard } from './common/guards/shop-term.guard';
 import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { LocationsModule } from './modules/locations/locations.module';
@@ -17,5 +19,6 @@ import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [DatabaseModule, AuthModule, LocationsModule, RegistrationModule, SuperAdminModule, BusinessModule, MenuModule, OrdersModule, GamesModule, WalletModule, RewardsModule, ClaimsModule, NotificationsModule, PublicModule, HealthModule],
+  providers: [{ provide: APP_GUARD, useClass: ShopTermGuard }],
 })
 export class AppModule {}

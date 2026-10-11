@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.module';
+import { visitedBusinessMatch } from '../../common/utils/visited.util';
 import { planFifoUse } from '../../common/utils/coins.util';
 import { validateImage } from '../../common/utils/validation.util';
 import { saveUpload } from '../../common/utils/files.util';
@@ -39,23 +40,60 @@ export class RewardsService {
     return pageResult(rows, Number(totalRow || 0), page, pageSize);
   }
   async setStatus(businessId: number, id: number, status: 'Approved' | 'Rejected') {
-    await this.db.query(`UPDATE public."RewardRedemptions" SET status=$1, updateddate=CURRENT_TIMESTAMP WHERE rewardredemptionid=$2 AND businessid=$3`, [status, id, businessId]);
-    return { ok: true };
+    if (status !== 'Approved' && status !== 'Rejected') throw new BadRequestException('Choose approve or decline.');
+    return this.db.tx(async (client) => {
+      const current = await client.query<{ status: string; customerid: number; coinsrequired: number; rewardname: string }>(
+        `SELECT rr.status, rr.customerid, r.coinsrequired, r.rewardname
+         FROM public."RewardRedemptions" rr
+         JOIN public."Rewards" r ON r.rewardid = rr.rewardid
+         WHERE rr.rewardredemptionid = $1 AND rr.businessid = $2`,
+        [id, businessId],
+      );
+      const row = current.rows[0];
+      if (!row) throw new NotFoundException('Claim not found.');
+      if (row.status !== 'Pending') throw new BadRequestException('This claim is already closed.');
+      if (status === 'Rejected') {
+        const coins = Number(row.coinsrequired || 0);
+        if (coins > 0) {
+          await client.query(`UPDATE public."Customers" SET totalcoins = totalcoins + $1 WHERE customerid = $2`, [coins, row.customerid]);
+          await client.query(`INSERT INTO public."WalletTransactions" (customerid, coins, transactiontype, description, businessid) VALUES ($1,$2,'Add',$3,$4)`, [row.customerid, coins, `Offer declined: ${row.rewardname}`, businessId]);
+        }
+      }
+      await client.query(`UPDATE public."RewardRedemptions" SET status=$1, updateddate=CURRENT_TIMESTAMP WHERE rewardredemptionid=$2 AND businessid=$3`, [status, id, businessId]);
+      return { ok: true, status };
+    });
   }
   async catalog(customerId: number, businessId?: number) {
-    const customer = await this.db.one(`SELECT customerid, totalcoins, customername FROM public."Customers" WHERE customerid=$1`, [customerId]);
-    const params: unknown[] = [];
-    let sql = `SELECT r.*, b.businessname, b.businesstoken FROM public."Rewards" r JOIN public."Businesses" b ON b.businessid=r.businessid WHERE r.isactive=true AND b.isactive=true`;
-    if (businessId) { params.push(businessId); sql += ` AND r.businessid=$1`; }
-    return { customer, rewards: await this.db.many(`${sql} ORDER BY r.coinsrequired`, params), merchants: await this.db.many(`SELECT DISTINCT b.businessid, b.businessname FROM public."Rewards" r JOIN public."Businesses" b ON b.businessid=r.businessid WHERE r.isactive=true ORDER BY b.businessname`) };
+    const customer = await this.db.one<{ mobile?: string | null }>(`SELECT customerid, totalcoins, customername, mobile FROM public."Customers" WHERE customerid=$1`, [customerId]);
+    const mobile = String(customer?.mobile || '').replace(/\D/g, '').slice(-10);
+    const params: unknown[] = [customerId, mobile];
+    const visited = visitedBusinessMatch('b.businessid', '$1', '$2');
+    let sql = `SELECT r.*, b.businessname, b.businesstoken FROM public."Rewards" r JOIN public."Businesses" b ON b.businessid=r.businessid WHERE r.isactive=true AND b.isactive=true AND ${visited}`;
+    if (businessId) { params.push(businessId); sql += ` AND r.businessid=$${params.length}`; }
+    const merchants = await this.db.many(`SELECT DISTINCT b.businessid, b.businessname FROM public."Rewards" r JOIN public."Businesses" b ON b.businessid=r.businessid WHERE r.isactive=true AND b.isactive=true AND ${visited} ORDER BY b.businessname`, [customerId, mobile]);
+    return { customer, rewards: await this.db.many(`${sql} ORDER BY r.coinsrequired`, params), merchants };
   }
   async redeem(customerId: number, rewardId: number) {
     return this.db.tx(async (client) => {
       const reward = await client.query(`SELECT coinsrequired, rewardname, businessid FROM public."Rewards" WHERE rewardid=$1 AND isactive=true`, [rewardId]);
       const row = reward.rows[0];
       if (!row) throw new BadRequestException('Reward not found or is inactive.');
-      const coins = await client.query(`SELECT COALESCE(totalcoins,0) AS total FROM public."Customers" WHERE customerid=$1`, [customerId]);
-      const current = Number(coins.rows[0].total);
+      const who = await client.query<{ mobile: string | null; total: string }>(`SELECT mobile, COALESCE(totalcoins,0)::text AS total FROM public."Customers" WHERE customerid=$1`, [customerId]);
+      const digits = String(who.rows[0]?.mobile || '').replace(/\D/g, '');
+      const mobile = digits.length >= 10 ? digits.slice(-10) : '';
+      const prior = await client.query(
+        `SELECT 1 FROM public."RewardRedemptions" rr
+         JOIN public."Customers" c ON c.customerid = rr.customerid
+         WHERE rr.rewardid = $1 AND rr.businessid = $2 AND rr.status <> 'Rejected'
+           AND (
+             c.customerid = $3
+             OR ($4 <> '' AND RIGHT(regexp_replace(COALESCE(c.mobile, ''), '[^0-9]', '', 'g'), 10) = $4)
+           )
+         LIMIT 1`,
+        [rewardId, row.businessid, customerId, mobile],
+      );
+      if (prior.rows.length) throw new BadRequestException('You already claimed this offer at this shop.');
+      const current = Number(who.rows[0]?.total || 0);
       if (current < row.coinsrequired) throw new BadRequestException(`Insufficient coins. You have ${current} coins, but this reward requires ${row.coinsrequired} coins.`);
       await client.query(`UPDATE public."Customers" SET totalcoins = totalcoins - $1 WHERE customerid=$2`, [row.coinsrequired, customerId]);
       const earns = await client.query(`SELECT wallettransactionid, coins, coinsused FROM public."WalletTransactions" WHERE customerid=$1 AND coins > coinsused AND isexpired=false AND transactiontype='Earn' ORDER BY createddate ASC`, [customerId]);
@@ -64,7 +102,7 @@ export class RewardsService {
       }
       await client.query(`INSERT INTO public."WalletTransactions" (customerid, coins, transactiontype, description, businessid) VALUES ($1,$2,'Redeem',$3,$4)`, [customerId, -row.coinsrequired, `Claimed reward: ${row.rewardname}`, row.businessid]);
       await client.query(`INSERT INTO public."RewardRedemptions" (customerid, rewardid, businessid, status) VALUES ($1,$2,$3,'Pending')`, [customerId, rewardId, row.businessid]);
-      return { ok: true, message: `Reward claimed: ${row.rewardname}` };
+      return { ok: true, status: 'Pending', message: `${row.rewardname} is pending until the shop approves it.` };
     });
   }
 }

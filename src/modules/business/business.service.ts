@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { DatabaseService } from '../../database/database.module';
 import { numOrNull, saveUpload, writeQr } from '../../common/utils/files.util';
 import { ensurePlaceColumn, uniqueBusinessSlug } from '../../common/utils/place.util';
+import { isDirectorySearch, visitedBusinessMatch } from '../../common/utils/visited.util';
 import { hashPassword } from '../../common/utils/password.util';
 import { isValidEmail, isValidMobile, normalizeMobile, validateImage } from '../../common/utils/validation.util';
 import { loadConfig } from '../../config/env';
@@ -206,9 +207,11 @@ export class BusinessService {
     return this.qr(businessId);
   }
 
-  async explore(query: Record<string, string>) {
+  async explore(query: Record<string, string>, customerId?: number) {
     await ensurePlaceColumn(this.db);
     const params: unknown[] = [];
+    const directory = isDirectorySearch(query) || !customerId;
+    let scope: 'visited' | 'directory' = 'directory';
     let sql = `SELECT b.businessid, b.businessname, b.businesstype, b.logoimagepath, b.bannerimagepath, b.businesstoken, b.publicslug, b.address,
       COALESCE(c.cityname, 'Unknown') as cityname, COALESCE(s.statename, 'Unknown') as statename,
       (SELECT string_agg(DISTINCT gc.gamecode, ', ') FROM public."GameConfigurations" gc WHERE gc.businessid = b.businessid AND gc.isactive = true) as active_games,
@@ -225,6 +228,13 @@ export class BusinessService {
       LEFT JOIN public."Cities" c ON b.cityid = c.cityid
       LEFT JOIN public."Districts" d ON b.districtid = d.districtid
       WHERE b.isactive = true`;
+    if (!directory && customerId) {
+      const me = await this.db.one<{ mobile: string | null }>(`SELECT mobile FROM public."Customers" WHERE customerid = $1`, [customerId]);
+      const mobile = String(me?.mobile || '').replace(/\D/g, '').slice(-10);
+      params.push(customerId, mobile);
+      sql += ` AND ${visitedBusinessMatch('b.businessid', `$${params.length - 1}`, `$${params.length}`)}`;
+      scope = 'visited';
+    }
     const add = (clause: string, value: unknown) => { params.push(value); sql += ` ${clause.replace('?', `$${params.length}`)}`; };
     if (query.search) add('AND LOWER(b.businessname) LIKE ?', `%${query.search.toLowerCase()}%`);
     if (query.place) {
@@ -248,7 +258,7 @@ export class BusinessService {
     }
     sql += query.near === '1' ? ' ORDER BY distancekm NULLS LAST, b.businessname' : ' ORDER BY b.businessname';
     const categories = await this.db.many(`SELECT DISTINCT businesstype FROM public."Businesses" WHERE businesstype IS NOT NULL AND businesstype <> '' AND isactive = true ORDER BY businesstype`);
-    return { businesses: await this.db.many(sql, params), categories };
+    return { businesses: await this.db.many(sql, params), categories, scope };
   }
 
   async details(id: number) {

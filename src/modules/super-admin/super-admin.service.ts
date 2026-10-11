@@ -1,11 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.module';
 import { ensurePlaceColumn } from '../../common/utils/place.util';
+import { activeDays, ensureTermColumn } from '../../common/utils/term.util';
+import { RegistrationService } from '../registration/registration.service';
+import { BusinessRegisterDto } from '../registration/dto/registration.dto';
 import { BusinessTypeDto } from './dto/super-admin.dto';
 
 @Injectable()
 export class SuperAdminService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService, private readonly registration: RegistrationService) {}
 
   async dashboard() {
     const [businesses, customers, spins, redemptions, recent] = await Promise.all([
@@ -20,7 +23,42 @@ export class SuperAdminService {
 
   async businesses() {
     await ensurePlaceColumn(this.db);
-    return this.db.many(`SELECT businessid, businessname, businesstype, phone, email, logoimagepath, isactive, createddate, businesstoken, publicslug FROM public."Businesses" ORDER BY createddate DESC`);
+    await ensureTermColumn(this.db);
+    return this.db.many(`SELECT businessid, businessname, businesstype, phone, email, logoimagepath, isactive, createddate, activeto, businesstoken, publicslug FROM public."Businesses" ORDER BY createddate DESC`);
+  }
+
+  async renew(id: number, daysInput: unknown) {
+    const raw = Math.round(Number(daysInput));
+    if (!Number.isFinite(raw) || raw < 1) throw new BadRequestException('Enter how many more days.');
+    const days = activeDays(raw, 7);
+    await ensureTermColumn(this.db);
+    const row = await this.db.one<{ activeto: string }>(
+      `UPDATE public."Businesses"
+       SET activeto = GREATEST(COALESCE(activeto, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP) + ($1::int * INTERVAL '1 day')
+       WHERE businessid = $2
+       RETURNING activeto`,
+      [days, id],
+    );
+    if (!row) throw new NotFoundException('Business not found.');
+    return { ok: true, activeto: row.activeto };
+  }
+
+  onboard(input: BusinessRegisterDto & { activeDays?: number }) {
+    return this.registration.registerBusiness({ ...input, termsAccepted: 'true' }, undefined, { activeDays: activeDays(input.activeDays, 7) });
+  }
+
+  async demos() {
+    await this.db.query(`CREATE TABLE IF NOT EXISTS public."DemoRequests" (
+      demorequestid SERIAL PRIMARY KEY,
+      contactname VARCHAR(200) NOT NULL,
+      mobile VARCHAR(20) NOT NULL,
+      email VARCHAR(150) NOT NULL,
+      businessname VARCHAR(200) NOT NULL,
+      businesstype VARCHAR(100),
+      city VARCHAR(100),
+      createddate TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    return this.db.many(`SELECT * FROM public."DemoRequests" ORDER BY createddate DESC`);
   }
 
   async setActive(id: number, isActive: boolean) {

@@ -385,6 +385,19 @@ ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS businesstypeid INTEGER;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS businesstoken VARCHAR(50);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS publicslug VARCHAR(80);
 CREATE UNIQUE INDEX IF NOT EXISTS businesses_publicslug_lower ON public."Businesses" (lower(publicslug)) WHERE publicslug IS NOT NULL AND publicslug <> '';
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS activeto TIMESTAMP;
+UPDATE public."Businesses" SET activeto = CURRENT_TIMESTAMP + INTERVAL '7 days' WHERE activeto IS NULL;
+
+CREATE TABLE IF NOT EXISTS public."DemoRequests" (
+  demorequestid SERIAL PRIMARY KEY,
+  contactname VARCHAR(200) NOT NULL,
+  mobile VARCHAR(20) NOT NULL,
+  email VARCHAR(150) NOT NULL,
+  businessname VARCHAR(200) NOT NULL,
+  businesstype VARCHAR(100),
+  city VARCHAR(100),
+  createddate TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS logoimagepath TEXT;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS bannerimagepath TEXT;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS tagline VARCHAR(250);

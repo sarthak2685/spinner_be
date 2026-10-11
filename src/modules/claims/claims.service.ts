@@ -2,13 +2,15 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { DatabaseService } from '../../database/database.module';
 import { saveUpload } from '../../common/utils/files.util';
 import { findBusinessByPlace } from '../../common/utils/place.util';
+import { assertShopOpen, ensureTermColumn } from '../../common/utils/term.util';
 import { isValidMobile, normalizeMobile, validateImage } from '../../common/utils/validation.util';
 import { ClaimDto } from './dto/claims.dto';
 import { PageQuery, pageParams, pageResult } from '../../common/utils/paging.util';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ClaimsService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService, private readonly notes: NotificationsService) {}
   async forBusiness(businessId: number, query: PageQuery = {}) {
     const { page, pageSize, from, to, offset } = pageParams(query);
     const [totalRow, rows] = await Promise.all([
@@ -38,7 +40,7 @@ export class ClaimsService {
     return pageResult(rows, Number(totalRow || 0), page, pageSize);
   }
   async decide(businessId: number, claimId: number, userId: number, action: 'approve' | 'reject', reason?: string) {
-    return this.db.tx(async (client) => {
+    const result = await this.db.tx(async (client) => {
       const claim = await client.query(`SELECT status, coins, customerid, purchaseamount FROM public."PurchaseClaims" WHERE purchaseclaimid=$1 AND businessid=$2 FOR UPDATE`, [claimId, businessId]);
       const row = claim.rows[0];
       if (!row) throw new NotFoundException('Purchase claim not found.');
@@ -47,17 +49,26 @@ export class ClaimsService {
         await client.query(`UPDATE public."PurchaseClaims" SET status='Approved', approveddate=CURRENT_TIMESTAMP, approvedbyuserid=$1 WHERE purchaseclaimid=$2`, [userId, claimId]);
         await client.query(`UPDATE public."Customers" SET totalcoins = totalcoins + $1 WHERE customerid=$2`, [row.coins, row.customerid]);
         await client.query(`INSERT INTO public."WalletTransactions" (customerid, businessid, coins, transactiontype, description, expirydate, coinsused, isexpired, expiredcoins, purchaseclaimid) VALUES ($1,$2,$3,'Earn',$4,CURRENT_TIMESTAMP + INTERVAL '30 days',0,false,0,$5)`, [row.customerid, businessId, row.coins, `Earned ${row.coins} coins from purchase of ₹${row.purchaseamount}`, claimId]);
-        await client.query(`INSERT INTO public."CustomerNotifications" (customerid, businessid, title, message, notificationtype) VALUES ($1,$2,'Purchase Claim Approved',$3,'PurchaseApproval')`, [row.customerid, businessId, `Your purchase claim of ₹${row.purchaseamount} has been approved! Earned ${row.coins} coins.`]);
-      } else {
-        await client.query(`UPDATE public."PurchaseClaims" SET status='Rejected', approveddate=CURRENT_TIMESTAMP, approvedbyuserid=$1, rejectionreason=$2 WHERE purchaseclaimid=$3`, [userId, reason || null, claimId]);
+        const title = 'Purchase claim approved';
+        const message = `Your bill of ₹${row.purchaseamount} was approved. ${row.coins} coins are in your wallet.`;
+        await client.query(`INSERT INTO public."CustomerNotifications" (customerid, businessid, title, message, notificationtype) VALUES ($1,$2,$3,$4,'PurchaseApproval')`, [row.customerid, businessId, title, message]);
+        return { ok: true, notify: { customerId: Number(row.customerid), title, message } };
       }
-      return { ok: true };
+      await client.query(`UPDATE public."PurchaseClaims" SET status='Rejected', approveddate=CURRENT_TIMESTAMP, approvedbyuserid=$1, rejectionreason=$2 WHERE purchaseclaimid=$3`, [userId, reason || null, claimId]);
+      return { ok: true, notify: null as null };
     });
+    if (result.notify) await this.notes.alertCustomers([result.notify.customerId], result.notify.title, result.notify.message, '/customer/wallet', `claim-${claimId}`);
+    return { ok: true };
   }
   async create(customerId: number, input: ClaimDto, file?: Express.Multer.File) {
-    const business = input.token ? await findBusinessByPlace<{ businessid: number; isactive: boolean }>(this.db, input.token) : null;
+    const business = input.token ? await findBusinessByPlace<{ businessid: number; isactive: boolean; activeto?: string | null }>(this.db, input.token) : null;
+    if (business) assertShopOpen(business);
     const businessId = business?.businessid || Number(input.businessId);
     if (!businessId) throw new BadRequestException('Choose a business for this claim.');
+    if (!business) {
+      await ensureTermColumn(this.db);
+      assertShopOpen(await this.db.one<{ activeto?: string | null }>(`SELECT activeto FROM public."Businesses" WHERE businessid=$1`, [businessId]));
+    }
     const amount = Number(input.amount);
     if (!(amount > 0)) throw new BadRequestException('Enter a valid purchase amount.');
     const imageError = validateImage(file);
@@ -69,8 +80,9 @@ export class ClaimsService {
   }
 
   async publicCreate(input: ClaimDto & { customerName?: string; mobile?: string }, file?: Express.Multer.File) {
-    const business = await findBusinessByPlace<{ businessid: number; isactive: boolean }>(this.db, input.token || '');
+    const business = await findBusinessByPlace<{ businessid: number; isactive: boolean; activeto?: string | null }>(this.db, input.token || '');
     if (!business || business.isactive === false) throw new NotFoundException('Business not found or inactive.');
+    assertShopOpen(business);
     const mobile = normalizeMobile(input.mobile || '');
     if (!isValidMobile(mobile)) throw new BadRequestException('Enter a 10-digit mobile number.');
     const name = String(input.customerName || '').trim().slice(0, 200);

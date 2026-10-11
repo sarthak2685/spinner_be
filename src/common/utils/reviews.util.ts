@@ -1,6 +1,21 @@
-const DEFAULT_REVIEW_WORDS = ['friendly staff', 'great food', 'quick service', 'clean place', 'good value', 'tasty', 'cozy', 'worth visiting'];
+const FOOD_WORDS = ['friendly staff', 'great food', 'tasty', 'fresh', 'quick service', 'clean place', 'good value', 'worth visiting'];
+const SALON_WORDS = ['friendly staff', 'skilled stylist', 'clean salon', 'relaxing', 'hygienic', 'on time', 'gentle', 'worth visiting'];
+const GYM_WORDS = ['friendly staff', 'good trainers', 'clean gym', 'well equipped', 'motivating', 'on time', 'good value', 'worth joining'];
+const CLINIC_WORDS = ['caring staff', 'clean clinic', 'on time', 'clear advice', 'gentle', 'professional', 'easy booking', 'worth visiting'];
+const RETAIL_WORDS = ['helpful staff', 'good quality', 'fair price', 'neat store', 'quick service', 'good range', 'easy checkout', 'worth visiting'];
+const GENERIC_WORDS = ['friendly staff', 'quick service', 'clean place', 'good value', 'professional', 'on time', 'comfortable', 'worth visiting'];
 
-export function reviewKeywords(raw?: string | null, tagline?: string | null) {
+export function keywordsForBusinessType(type?: string | null) {
+  const text = (type || '').toLowerCase();
+  if (/salon|spa|beauty|barber|parlour|parlor|\bhair\b/.test(text)) return SALON_WORDS;
+  if (/gym|fitness/.test(text)) return GYM_WORDS;
+  if (/clinic|health|hospital|dental|doctor|pharma/.test(text)) return CLINIC_WORDS;
+  if (/retail|boutique|\bstore\b/.test(text)) return RETAIL_WORDS;
+  if (/restaurant|cafe|coffee|bakery|\bfood\b|dhaba|\bbar\b|kitchen/.test(text)) return FOOD_WORDS;
+  return GENERIC_WORDS;
+}
+
+export function reviewKeywords(raw?: string | null, tagline?: string | null, businessType?: string | null) {
   const source = (raw && raw.trim()) || '';
   const fromSettings = source
     .split(/[,|/\n]+/)
@@ -15,7 +30,9 @@ export function reviewKeywords(raw?: string | null, tagline?: string | null) {
     words.push(word);
   }
   if (words.length) return words.slice(0, 12);
-  // Tagline is often a sentence — only use short comma-separated bits, else defaults.
+  const typed = keywordsForBusinessType(businessType);
+  if (businessType && typed !== GENERIC_WORDS) return typed;
+  // Tagline is often a sentence — only use short comma-separated bits, else the type list.
   const fromTagline = (tagline || '')
     .split(/[,|]/)
     .map((part) => part.trim())
@@ -27,7 +44,7 @@ export function reviewKeywords(raw?: string | null, tagline?: string | null) {
     words.push(word);
   }
   if (words.length >= 3) return words.slice(0, 12);
-  return DEFAULT_REVIEW_WORDS;
+  return typed;
 }
 
 export function fallbackReviews(businessName: string, keywords: string[]) {

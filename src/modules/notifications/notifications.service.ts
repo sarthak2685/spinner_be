@@ -46,18 +46,23 @@ export class NotificationsService {
     });
 
     const ids = recipients.map((row) => row.customerid);
-    const delivered = await this.deliverBrowserPush(ids, body.title, body.message, '/customer/notifications');
+    const shop = await this.db.one<{ businessname: string }>(`SELECT businessname FROM public."Businesses" WHERE businessid=$1`, [businessId]);
+    const delivered = await this.alertCustomers(ids, body.title, shop?.businessname ? `${shop.businessname}: ${body.message}` : body.message, '/customer/notifications', `offer-${notificationId}`);
     return { notificationId, recipientCount: recipients.length, browserPush: delivered };
   }
 
-  private async deliverBrowserPush(customerIds: number[], title: string, message: string, url: string) {
+  alertCustomers(customerIds: number[], title: string, message: string, url = '/customer/notifications', tag?: string) {
+    return this.deliverBrowserPush(customerIds, title, message, url, tag);
+  }
+
+  private async deliverBrowserPush(customerIds: number[], title: string, message: string, url: string, tag?: string) {
     if (!this.pushReady || !customerIds.length) return { attempted: 0, sent: 0 };
     const tokens = await this.db.many<{ deviceid: number; devicetoken: string }>(
       `SELECT deviceid, devicetoken FROM public."CustomerDeviceTokens" WHERE isactive=true AND customerid = ANY($1::int[])`,
       [customerIds],
     );
     let sent = 0;
-    const payload = JSON.stringify({ title, body: message, url });
+    const payload = JSON.stringify({ title, body: message, url, tag: tag || title });
     for (const row of tokens) {
       try {
         const subscription = JSON.parse(row.devicetoken);

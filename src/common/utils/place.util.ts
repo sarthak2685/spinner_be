@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { QueryResult, QueryResultRow } from 'pg';
+import { ensureTermColumn } from './term.util';
 
 type PlaceDb = {
   one: <T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]) => Promise<T | null>;
@@ -45,6 +46,7 @@ export async function uniqueBusinessSlug(db: PlaceDb, name: string, excludeBusin
 
 export async function findBusinessByPlace<T extends QueryResultRow = QueryResultRow>(db: PlaceDb, token: string) {
   await ensurePlaceColumn(db);
+  await ensureTermColumn(db);
   const key = decodeURIComponent(String(token || '')).trim();
   if (!key) return null;
   return db.one<T>(

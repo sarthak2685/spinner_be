@@ -58,7 +58,7 @@ export class BusinessController {
 
   @Get('customer/explore')
   @Roles('Customer')
-  explore(@Query() query: Record<string, string>) { return this.business.explore(query); }
+  explore(@CurrentUser() user: AuthUser, @Query() query: Record<string, string>) { return this.business.explore(query, user.id); }
 
   @Get('customer/businesses/:id')
   @Roles('Customer')
