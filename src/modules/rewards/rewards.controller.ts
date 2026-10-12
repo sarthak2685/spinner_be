@@ -16,7 +16,10 @@ export class RewardsController {
   @Post('business/rewards') @Roles('BusinessAdmin') @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } }))
   save(@CurrentUser() user: AuthUser, @Body() body: RewardDto, @UploadedFile() file?: Express.Multer.File) { return this.rewards.save(user.businessId!, body, file); }
   @Post('business/rewards/:id/delete') @Roles('BusinessAdmin') remove(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) { return this.rewards.remove(user.businessId!, id); }
-  @Get('business/redemptions') @Roles('BusinessAdmin') redemptions(@CurrentUser() user: AuthUser, @Query() query: Record<string, string>) { return this.rewards.redemptions(user.businessId!, query); }
+  @Get('business/redemptions') @Roles('BusinessAdmin') redemptions(@CurrentUser() user: AuthUser, @Query() query: Record<string, string>) {
+    if (query.format === 'csv') return this.rewards.redemptionsCsv(user.businessId!, query);
+    return this.rewards.redemptions(user.businessId!, query);
+  }
   @Post('business/redemptions/:id') @Roles('BusinessAdmin') status(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() body: { status: 'Approved' | 'Rejected' }) { return this.rewards.setStatus(user.businessId!, id, body.status); }
   @Get('customer/rewards') @Roles('Customer') catalog(@CurrentUser() user: AuthUser, @Query('businessId') businessId?: string) { return this.rewards.catalog(user.id, businessId ? Number(businessId) : undefined); }
   @Get('customer/offers') @Roles('Customer') offers(@CurrentUser() user: AuthUser) { return this.rewards.catalog(user.id); }

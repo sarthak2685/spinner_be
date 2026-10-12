@@ -6,13 +6,25 @@ import { assertShopOpen, ensureTermColumn } from '../../common/utils/term.util';
 import { isValidMobile, normalizeMobile, validateImage } from '../../common/utils/validation.util';
 import { ClaimDto } from './dto/claims.dto';
 import { PageQuery, pageParams, pageResult } from '../../common/utils/paging.util';
+import { toCsv } from '../../common/utils/csv.util';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ClaimsService {
   constructor(private readonly db: DatabaseService, private readonly notes: NotificationsService) {}
-  async forBusiness(businessId: number, query: PageQuery = {}) {
+  async forBusiness(businessId: number, query: PageQuery & { format?: string } = {}) {
     const { page, pageSize, from, to, offset } = pageParams(query);
+    if (query.format === 'csv') {
+      const rows = await this.db.many<Record<string, unknown>>(
+        `SELECT c.customername, c.mobile, pc.purchaseamount, pc.coins, pc.status, pc.purchasedate
+         FROM public."PurchaseClaims" pc
+         JOIN public."Customers" c ON c.customerid=pc.customerid
+         WHERE pc.businessid=$1 AND pc.purchasedate::date BETWEEN $2::date AND $3::date
+         ORDER BY pc.purchasedate DESC`,
+        [businessId, from, to],
+      );
+      return { filename: 'claims.csv', csv: toCsv(['customername', 'mobile', 'purchaseamount', 'coins', 'status', 'purchasedate'], rows) };
+    }
     const [totalRow, rows] = await Promise.all([
       this.db.scalar<string>(`SELECT COUNT(1)::text FROM public."PurchaseClaims" WHERE businessid=$1 AND purchasedate::date BETWEEN $2::date AND $3::date`, [businessId, from, to]),
       this.db.many(

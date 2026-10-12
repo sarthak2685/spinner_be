@@ -69,7 +69,7 @@ export class RegistrationService {
          ON CONFLICT (businessid) DO UPDATE SET stationlabel = EXCLUDED.stationlabel, stationplaceholder = EXCLUDED.stationplaceholder, catalogtitle = EXCLUDED.catalogtitle`,
         [businessId, type?.stationlabel || 'Table / Room No.', type?.stationplaceholder || 'e.g., Table 4, Room 201', type?.catalogtitle || 'Online Menu'],
       );
-      const qrPath = await writeQr(token);
+      const qrPath = await writeQr(token, { logoPath: logo || null });
       await client.query(`INSERT INTO public."QRCodes" (businessid, qrname, qrcodetext, code, imagepath, isactive) VALUES ($1,'Permanent QR Code',$2,$3,$4,true)`, [businessId, `${loadConfig().publicWebUrl}/play/${token}`, token, qrPath]);
       const owner = await client.query(`INSERT INTO public."Users" (businessid, fullname, mobile, email, passwordhash, role) VALUES ($1,$2,$3,$4,$5,'BusinessAdmin') RETURNING userid`, [businessId, input.ownerName, ownerMobile, input.ownerEmail, hashPassword(input.password)]);
       await this.seedGames(client, businessId);
@@ -149,5 +149,13 @@ export class RegistrationService {
     if (!String(input.address || '').trim()) throw new BadRequestException('Address is required.');
     await this.db.query(`UPDATE public."Customers" SET customername=$1, email=$2, countryid=$3, stateid=$4, districtid=$5, cityid=$6, address=$7, pincode=$8 WHERE customerid=$9`, [input.name, email ? email.toLowerCase() : null, numOrNull(input.countryId), numOrNull(input.stateId), numOrNull(input.districtId), numOrNull(input.cityId), input.address || null, input.pincode || null, customerId]);
     return this.profile(customerId);
+  }
+
+  async deleteAccount(customerId: number) {
+    await this.db.query(
+      `UPDATE public."Customers" SET isdeleted = true, customername = 'Deleted customer', mobile = NULL, email = NULL, passwordhash = NULL WHERE customerid = $1`,
+      [customerId],
+    );
+    return { ok: true };
   }
 }

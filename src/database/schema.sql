@@ -428,6 +428,14 @@ ALTER TABLE public."Customers" ADD COLUMN IF NOT EXISTS failedloginattempts INTE
 ALTER TABLE public."Customers" ADD COLUMN IF NOT EXISTS lockoutend TIMESTAMP;
 ALTER TABLE public."Users" ADD COLUMN IF NOT EXISTS failedloginattempts INTEGER DEFAULT 0;
 ALTER TABLE public."Users" ADD COLUMN IF NOT EXISTS lockoutend TIMESTAMP;
+ALTER TABLE public."Customers" ADD COLUMN IF NOT EXISTS isdeleted BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public."Users" ADD COLUMN IF NOT EXISTS isdeleted BOOLEAN NOT NULL DEFAULT false;
+CREATE TABLE IF NOT EXISTS public."ShopCustomerHides" (
+  businessid INTEGER NOT NULL,
+  customerid INTEGER NOT NULL,
+  createddate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (businessid, customerid)
+);
 
 DO $$
 DECLARE

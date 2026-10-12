@@ -40,6 +40,10 @@ export class BusinessController {
   @Roles('BusinessAdmin')
   removeCustomer(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) { return this.business.removeCustomer(user.businessId!, id); }
 
+  @Post('business/account/delete')
+  @Roles('BusinessAdmin')
+  deleteAccount(@CurrentUser() user: AuthUser) { return this.business.deleteAccount(user.id, user.businessId!); }
+
   @Get('business/plays')
   @Roles('BusinessAdmin')
   plays(@CurrentUser() user: AuthUser, @Query() query: Record<string, string>) { return this.business.plays(user.businessId!, query); }

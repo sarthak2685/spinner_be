@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Injectable, Module, NotFoundException, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Injectable, Module, NotFoundException, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseService } from '../../database/database.module';
 import { loadConfig } from '../../config/env';
@@ -11,6 +11,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser, Roles } from '../../common/decorators/auth.decorators';
 import { AuthUser } from '../../common/auth-user';
+import { toCsv } from '../../common/utils/csv.util';
 
 type ReviewBody = { token?: string; customerName?: string; keywords?: string[]; rating?: number; body?: string; phone?: string; email?: string; message?: string };
 type DemoBody = { name?: string; mobile?: string; email?: string; businessName?: string; businessType?: string; city?: string };
@@ -154,6 +155,12 @@ export class PublicService {
     return this.ensure().then(() => this.db.many(`SELECT * FROM public."GuestReviews" WHERE businessid=$1 AND btrim(COALESCE(customername, '')) <> '' ORDER BY createddate DESC`, [businessId]));
   }
 
+  async reviewsCsv(businessId: number) {
+    await this.ensure();
+    const rows = await this.db.many<Record<string, unknown>>(`SELECT customername, rating, body, createddate FROM public."GuestReviews" WHERE businessid=$1 AND btrim(COALESCE(customername, '')) <> '' ORDER BY createddate DESC`, [businessId]);
+    return { filename: 'reviews.csv', csv: toCsv(['customername', 'rating', 'body', 'createddate'], rows) };
+  }
+
   private async ensureDemos() {
     await this.db.query(`CREATE TABLE IF NOT EXISTS public."DemoRequests" (
       demorequestid SERIAL PRIMARY KEY,
@@ -222,7 +229,10 @@ export class PublicController {
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class GuestInboxController {
   constructor(private readonly pub: PublicService) {}
-  @Get('business/guest-reviews') @Roles('BusinessAdmin') reviews(@CurrentUser() user: AuthUser) { return this.pub.reviews(user.businessId!); }
+  @Get('business/guest-reviews') @Roles('BusinessAdmin') reviews(@CurrentUser() user: AuthUser, @Query('format') format?: string) {
+    if (format === 'csv') return this.pub.reviewsCsv(user.businessId!);
+    return this.pub.reviews(user.businessId!);
+  }
   @Get('business/guest-feedback') @Roles('BusinessAdmin') feedback(@CurrentUser() user: AuthUser) { return this.pub.feedback(user.businessId!); }
   @Post('business/guest-feedback/:id') @Roles('BusinessAdmin') status(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() body: { status?: string }) { return this.pub.feedbackStatus(user.businessId!, id, body.status || 'read'); }
 }

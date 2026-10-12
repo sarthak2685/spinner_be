@@ -9,13 +9,14 @@ import { findBusinessByPlace } from '../../common/utils/place.util';
 import { assertShopOpen } from '../../common/utils/term.util';
 import { PlaceOrderDto } from './dto/orders.dto';
 import { PageQuery, pageParams, pageResult } from '../../common/utils/paging.util';
+import { toCsv } from '../../common/utils/csv.util';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class OrdersService {
   constructor(private readonly db: DatabaseService, private readonly notes: NotificationsService) {}
 
-  async list(businessId: number, status?: string, query: PageQuery = {}) {
+  async list(businessId: number, status?: string, query: PageQuery & { format?: string } = {}) {
     const { page, pageSize, from, to, offset } = pageParams(query);
     const filterStatus = status && status !== 'All';
     const params: unknown[] = [businessId, from, to];
@@ -23,6 +24,17 @@ export class OrdersService {
     if (filterStatus) {
       params.push(status);
       where += ` AND o.status=$${params.length}`;
+    }
+    if (query.format === 'csv') {
+      const rows = await this.db.many<Record<string, unknown>>(
+        `SELECT o.ordernumber, c.customername, c.mobile, o.totalamount, o.status, o.fulfillment, o.createddate
+         FROM public."Orders" o
+         JOIN public."Customers" c ON c.customerid = o.customerid
+         WHERE ${where}
+         ORDER BY o.createddate DESC`,
+        params,
+      );
+      return { filename: 'orders.csv', csv: toCsv(['ordernumber', 'customername', 'mobile', 'totalamount', 'status', 'fulfillment', 'createddate'], rows) };
     }
     const [totalRow, rows] = await Promise.all([
       this.db.scalar<string>(`SELECT COUNT(1)::text FROM public."Orders" o WHERE ${where}`, params),

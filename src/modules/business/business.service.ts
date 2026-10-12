@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.module';
 import { numOrNull, saveUpload, writeQr } from '../../common/utils/files.util';
+import { toCsv } from '../../common/utils/csv.util';
 import { ensurePlaceColumn, uniqueBusinessSlug } from '../../common/utils/place.util';
 import { isDirectorySearch, visitedBusinessMatch } from '../../common/utils/visited.util';
 import { hashPassword } from '../../common/utils/password.util';
@@ -62,22 +63,60 @@ export class BusinessService {
     return this.profile(businessId);
   }
 
-  async customers(businessId: number, query: PageQuery & { scope?: string } = {}) {
+  private async ensureHides() {
+    await this.db.query(`CREATE TABLE IF NOT EXISTS public."ShopCustomerHides" (
+      businessid INTEGER NOT NULL,
+      customerid INTEGER NOT NULL,
+      createddate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (businessid, customerid)
+    )`);
+  }
+
+  private customerWhere(all: boolean) {
+    const visit = `(
+      c.businessid = $1
+      OR EXISTS (SELECT 1 FROM public."GamePlays" gp WHERE gp.customerid = c.customerid AND gp.businessid = $1)
+      OR EXISTS (SELECT 1 FROM public."Orders" o WHERE o.customerid = c.customerid AND o.businessid = $1)
+      OR EXISTS (SELECT 1 FROM public."PurchaseClaims" pc WHERE pc.customerid = c.customerid AND pc.businessid = $1)
+      OR EXISTS (SELECT 1 FROM public."RewardRedemptions" rr WHERE rr.customerid = c.customerid AND rr.businessid = $1)
+    )`;
+    const dated = `(
+      (c.businessid = $1 AND c.createddate::date BETWEEN $2::date AND $3::date)
+      OR EXISTS (SELECT 1 FROM public."GamePlays" gp WHERE gp.customerid = c.customerid AND gp.businessid = $1 AND gp.createddate::date BETWEEN $2::date AND $3::date)
+      OR EXISTS (SELECT 1 FROM public."Orders" o WHERE o.customerid = c.customerid AND o.businessid = $1 AND o.createddate::date BETWEEN $2::date AND $3::date)
+      OR EXISTS (SELECT 1 FROM public."PurchaseClaims" pc WHERE pc.customerid = c.customerid AND pc.businessid = $1 AND pc.purchasedate::date BETWEEN $2::date AND $3::date)
+      OR EXISTS (SELECT 1 FROM public."RewardRedemptions" rr WHERE rr.customerid = c.customerid AND rr.businessid = $1 AND rr.createddate::date BETWEEN $2::date AND $3::date)
+    )`;
+    return `COALESCE(c.isdeleted, false) = false
+      AND NOT EXISTS (SELECT 1 FROM public."ShopCustomerHides" h WHERE h.businessid = $1 AND h.customerid = c.customerid)
+      AND ${all ? visit : dated}`;
+  }
+
+  async customers(businessId: number, query: PageQuery & { scope?: string; format?: string } = {}) {
+    await this.ensureHides();
     const { page, pageSize, from, to, offset } = pageParams(query);
     const all = query.scope === 'all';
-    const where = all
-      ? `businessid=$1`
-      : `businessid=$1 AND createddate::date BETWEEN $2::date AND $3::date`;
+    const where = this.customerWhere(all);
     const countParams = all ? [businessId] : [businessId, from, to];
+    if (query.format === 'csv') {
+      const rows = await this.db.many<Record<string, unknown>>(
+        `SELECT c.customername, c.mobile, c.email, c.totalcoins, c.createddate
+         FROM public."Customers" c
+         WHERE ${where}
+         ORDER BY c.createddate DESC`,
+        countParams,
+      );
+      return { filename: 'customers.csv', csv: toCsv(['customername', 'mobile', 'email', 'totalcoins', 'createddate'], rows) };
+    }
     const listParams = all ? [businessId, pageSize, offset] : [businessId, from, to, pageSize, offset];
     const limitSql = all ? `LIMIT $2 OFFSET $3` : `LIMIT $4 OFFSET $5`;
     const [totalRow, rows] = await Promise.all([
-      this.db.scalar<string>(`SELECT COUNT(1)::text FROM public."Customers" WHERE ${where}`, countParams),
+      this.db.scalar<string>(`SELECT COUNT(1)::text FROM public."Customers" c WHERE ${where}`, countParams),
       this.db.many(
-        `SELECT customerid, customername, mobile, email, totalcoins, createddate
-         FROM public."Customers"
+        `SELECT c.customerid, c.customername, c.mobile, c.email, c.totalcoins, c.createddate
+         FROM public."Customers" c
          WHERE ${where}
-         ORDER BY createddate DESC
+         ORDER BY c.createddate DESC
          ${limitSql}`,
         listParams,
       ),
@@ -94,32 +133,10 @@ export class BusinessService {
     if (email && !isValidEmail(email)) throw new BadRequestException('Enter a valid email address.');
     const coins = input.totalCoins === undefined || input.totalCoins === '' ? null : Number(input.totalCoins);
     if (coins !== null && (!(coins >= 0) || Number.isNaN(coins))) throw new BadRequestException('Coins must be zero or more.');
-    const password = String(input.password || '').trim();
+    const password = input.id ? '' : String(input.password || '').trim();
     if (password && password.length < 6) throw new BadRequestException('Password must be at least 6 characters.');
 
-    if (input.id) {
-      const id = Number(input.id);
-      const existing = await this.db.one(`SELECT customerid FROM public."Customers" WHERE customerid=$1 AND businessid=$2`, [id, businessId]);
-      if (!existing) throw new NotFoundException('Customer not found.');
-      if (mobile) {
-        const clash = await this.db.scalar<string>(
-          `SELECT COUNT(1)::text FROM public."Customers" WHERE businessid=$1 AND (mobile=$2 OR RIGHT(mobile,10)=$2) AND customerid<>$3`,
-          [businessId, mobile, id],
-        );
-        if (Number(clash || 0) > 0) throw new BadRequestException('Another customer already uses this mobile.');
-      }
-      await this.db.query(
-        `UPDATE public."Customers" SET
-           customername=$1,
-           mobile=COALESCE(NULLIF($2,''), mobile),
-           email=$3,
-           totalcoins=COALESCE($4, totalcoins),
-           passwordhash=CASE WHEN $5<>'' THEN $6 ELSE passwordhash END
-         WHERE customerid=$7 AND businessid=$8`,
-        [name, mobile, email || null, coins, password, password ? hashPassword(password) : null, id, businessId],
-      );
-      return { id };
-    }
+    if (input.id) throw new BadRequestException('Customer details cannot be edited. You can only remove them from this shop.');
 
     if (mobile) {
       const clash = await this.db.scalar<string>(
@@ -136,19 +153,34 @@ export class BusinessService {
     return { id: row!.customerid };
   }
 
-  async removeCustomer(businessId: number, id: number) {
-    const existing = await this.db.one(`SELECT customerid FROM public."Customers" WHERE customerid=$1 AND businessid=$2`, [id, businessId]);
-    if (!existing) throw new NotFoundException('Customer not found.');
-    try {
-      await this.db.query(`DELETE FROM public."Customers" WHERE customerid=$1 AND businessid=$2`, [id, businessId]);
-    } catch {
-      throw new BadRequestException('Cannot delete this customer because they have plays, orders, or wallet history. Edit their details instead.');
-    }
+  async deleteAccount(userId: number, businessId: number) {
+    await this.db.query(`UPDATE public."Users" SET isdeleted = true WHERE userid = $1 AND businessid = $2`, [userId, businessId]);
+    await this.db.query(`UPDATE public."Businesses" SET isactive = false WHERE businessid = $1`, [businessId]);
     return { ok: true };
   }
 
-  async plays(businessId: number, query: PageQuery = {}) {
+  async removeCustomer(businessId: number, id: number) {
+    await this.ensureHides();
+    const existing = await this.db.one(`SELECT customerid FROM public."Customers" c WHERE c.customerid=$2 AND ${this.customerWhere(true)}`, [businessId, id]);
+    if (!existing) throw new NotFoundException('Customer not found.');
+    await this.db.query(`INSERT INTO public."ShopCustomerHides" (businessid, customerid) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [businessId, id]);
+    return { ok: true };
+  }
+
+  async plays(businessId: number, query: PageQuery & { format?: string } = {}) {
     const { page, pageSize, from, to, offset } = pageParams(query);
+    if (query.format === 'csv') {
+      const rows = await this.db.many<Record<string, unknown>>(
+        `SELECT c.customername, c.mobile, gp.gamecode, p.prizename, gp.coinswon, gp.createddate
+         FROM public."GamePlays" gp
+         JOIN public."Customers" c ON c.customerid = gp.customerid
+         LEFT JOIN public."PrizeConfigurations" p ON p.prizeconfigurationid = gp.prizeconfigurationid
+         WHERE gp.businessid=$1 AND gp.createddate::date BETWEEN $2::date AND $3::date
+         ORDER BY gp.createddate DESC`,
+        [businessId, from, to],
+      );
+      return { filename: 'plays.csv', csv: toCsv(['customername', 'mobile', 'gamecode', 'prizename', 'coinswon', 'createddate'], rows) };
+    }
     const [totalRow, rows] = await Promise.all([
       this.db.scalar<string>(`SELECT COUNT(1)::text FROM public."GamePlays" WHERE businessid=$1 AND createddate::date BETWEEN $2::date AND $3::date`, [businessId, from, to]),
       this.db.many(
@@ -167,22 +199,31 @@ export class BusinessService {
 
   async qr(businessId: number) {
     await this.ensurePublicSlug(businessId, false);
+    await this.paintQr(businessId);
     const [code, settings, business] = await Promise.all([
       this.db.one(`SELECT * FROM public."QRCodes" WHERE businessid = $1 ORDER BY createddate DESC LIMIT 1`, [businessId]),
       this.db.one(`SELECT * FROM public."BusinessExperienceSettings" WHERE businessid = $1`, [businessId]),
       this.profile(businessId),
     ]);
+    if (code?.imagepath) code.imagepath = `${String(code.imagepath).split('?')[0]}?t=${Date.now()}`;
     return { code, settings, business };
+  }
+
+  private async paintQr(businessId: number) {
+    const business = await this.db.one<{ publicslug: string | null; themecolor: string | null; logoimagepath: string | null }>(`SELECT publicslug, themecolor, logoimagepath FROM public."Businesses" WHERE businessid = $1`, [businessId]);
+    if (!business?.publicslug) return;
+    const image = await writeQr(business.publicslug, { color: business.themecolor, logoPath: business.logoimagepath });
+    await this.db.query(`UPDATE public."QRCodes" SET imagepath = $1 WHERE businessid = $2`, [image, businessId]);
   }
 
   private async ensurePublicSlug(businessId: number, refresh: boolean) {
     await ensurePlaceColumn(this.db);
-    const business = await this.db.one<{ businessname: string; publicslug: string | null }>(`SELECT businessname, publicslug FROM public."Businesses" WHERE businessid = $1`, [businessId]);
+    const business = await this.db.one<{ businessname: string; publicslug: string | null; themecolor: string | null; logoimagepath: string | null }>(`SELECT businessname, publicslug, themecolor, logoimagepath FROM public."Businesses" WHERE businessid = $1`, [businessId]);
     if (!business) throw new NotFoundException('Business not found.');
     if (business.publicslug && !refresh) return business.publicslug;
     const slug = await uniqueBusinessSlug(this.db, business.businessname, businessId);
     await this.db.query(`UPDATE public."Businesses" SET publicslug = $1 WHERE businessid = $2`, [slug, businessId]);
-    const image = await writeQr(slug);
+    const image = await writeQr(slug, { color: business.themecolor, logoPath: business.logoimagepath });
     const text = `${loadConfig().publicWebUrl}/play/${slug}`;
     const updated = await this.db.query(`UPDATE public."QRCodes" SET imagepath = $1, qrcodetext = $2 WHERE businessid = $3`, [image, text, businessId]);
     if (!updated.rowCount) {

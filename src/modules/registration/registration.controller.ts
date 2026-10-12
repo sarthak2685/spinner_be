@@ -32,4 +32,9 @@ export class RegistrationController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Customer')
   save(@CurrentUser() user: AuthUser, @Body() body: ProfileDto) { return this.registration.saveProfile(user.id, body); }
+
+  @Post('customer/account/delete')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Customer')
+  deleteAccount(@CurrentUser() user: AuthUser) { return this.registration.deleteAccount(user.id); }
 }

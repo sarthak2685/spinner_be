@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes, randomUUID } from 'crypto';
 import { DatabaseService } from '../../database/database.module';
@@ -152,8 +152,8 @@ export class AuthService implements OnModuleInit {
   }
 
   private async attemptAdmin(rawMobile: string, cleanMobile: string, password: string, remember?: boolean) {
-    const rows = await this.db.many<{ userid: number; businessid: number | null; fullname: string; role: AuthUser['role']; passwordhash: string; failedloginattempts: number | null; businesstoken: string | null }>(
-      `SELECT u.userid, u.businessid, u.fullname, u.role, u.passwordhash, u.failedloginattempts, b.businesstoken
+    const rows = await this.db.many<{ userid: number; businessid: number | null; fullname: string; role: AuthUser['role']; passwordhash: string; failedloginattempts: number | null; businesstoken: string | null; isdeleted: boolean | null; isactive: boolean | null }>(
+      `SELECT u.userid, u.businessid, u.fullname, u.role, u.passwordhash, u.failedloginattempts, COALESCE(u.isdeleted, false) AS isdeleted, b.businesstoken, b.isactive
        FROM public."Users" u LEFT JOIN public."Businesses" b ON u.businessid = b.businessid
        WHERE u.mobile = $1 OR RIGHT(u.mobile, 10) = $2`,
       [rawMobile, cleanMobile],
@@ -164,6 +164,8 @@ export class AuthService implements OnModuleInit {
       await this.fail('Users', 'userid', rows[0].userid, rows[0].failedloginattempts, cleanMobile, 'User');
       return null;
     }
+    if (matched.isdeleted) throw new ForbiddenException('This account has been deleted.');
+    if (matched.role === 'BusinessAdmin' && matched.businessid && matched.isactive === false) throw new ForbiddenException('This shop is paused.');
     if (verifyPassword(password, matched.passwordhash).needsUpgrade) {
       await this.db.query(`UPDATE public."Users" SET passwordhash = $1 WHERE userid = $2`, [hashPassword(password), matched.userid]);
     }
@@ -178,7 +180,7 @@ export class AuthService implements OnModuleInit {
     const rows = await this.db.many<{ customerid: number; businessid: number | null; customername: string | null; passwordhash: string; failedloginattempts: number | null; businesstoken: string | null }>(
       `SELECT c.customerid, c.businessid, c.customername, c.passwordhash, c.failedloginattempts, b.businesstoken
        FROM public."Customers" c LEFT JOIN public."Businesses" b ON c.businessid = b.businessid
-       WHERE (c.mobile = $1 OR RIGHT(c.mobile, 10) = $2) AND c.passwordhash IS NOT NULL ORDER BY c.customerid DESC`,
+       WHERE (c.mobile = $1 OR RIGHT(c.mobile, 10) = $2) AND c.passwordhash IS NOT NULL AND COALESCE(c.isdeleted, false) = false ORDER BY c.customerid DESC`,
       [rawMobile, cleanMobile],
     );
     if (!rows.length) return null;
@@ -215,18 +217,18 @@ export class AuthService implements OnModuleInit {
       const mobileRow = await client.query<{ mobile: string | null }>(`SELECT mobile FROM public."Customers" WHERE customerid = $1`, [loginId]);
       const digits = String(mobileRow.rows[0]?.mobile || '').replace(/\D/g, '');
       const mobile = digits.length >= 10 ? digits.slice(-10) : '';
-      const plays = await client.query<{ gameplayid: number; businessid: number; coinswon: number }>(`SELECT gameplayid, businessid, coinswon FROM public."GamePlays" WHERE customerid = $1 ORDER BY gameplayid`, [guestId]);
-      const byShop = new Map<number, { gameplayid: number; coinswon: number }[]>();
+      const plays = await client.query<{ gameplayid: number; coinswon: number; gamecode: string }>(`SELECT gameplayid, coinswon, gamecode FROM public."GamePlays" WHERE customerid = $1 ORDER BY gameplayid`, [guestId]);
+      const byGame = new Map<string, { gameplayid: number; coinswon: number }[]>();
       for (const row of plays.rows) {
-        const shopId = Number(row.businessid);
-        const list = byShop.get(shopId) || [];
+        const gamecode = row.gamecode || 'SpinWheel';
+        const list = byGame.get(gamecode) || [];
         list.push({ gameplayid: Number(row.gameplayid), coinswon: Number(row.coinswon || 0) });
-        byShop.set(shopId, list);
+        byGame.set(gamecode, list);
       }
       let keepCoins = 0;
       const dropIds: number[] = [];
-      for (const [shopId, list] of byShop) {
-        const existing = await client.query<{ n: string }>(PLAY_COUNT_SQL, [shopId, loginId, mobile, guestId]);
+      for (const [gamecode, list] of byGame) {
+        const existing = await client.query<{ n: string }>(PLAY_COUNT_SQL, [gamecode, loginId, mobile, guestId]);
         const split = keptGuestPlays(Number(existing.rows[0]?.n || 0), list);
         keepCoins += split.keep.reduce((sum, row) => sum + row.coinswon, 0);
         split.drop.forEach((row) => dropIds.push(row.gameplayid));

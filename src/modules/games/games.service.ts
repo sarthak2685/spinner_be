@@ -5,7 +5,7 @@ import { AuthService } from '../auth/auth.service';
 import { AuthUser } from '../../common/auth-user';
 import { pickPrizeIndex } from '../../common/utils/spin.util';
 import { findBusinessByPlace } from '../../common/utils/place.util';
-import { PLAY_COUNT_SQL, SHOP_PLAY_LIMIT } from '../../common/utils/plays.util';
+import { GAME_PLAY_LIMIT, PLAY_COUNT_SQL } from '../../common/utils/plays.util';
 import { assertShopOpen } from '../../common/utils/term.util';
 import { RateLimitService } from '../../common/utils/rate-limit.service';
 import { PrizeDto } from './dto/games.dto';
@@ -57,8 +57,9 @@ export class GamesService {
       const digits = String(who?.mobile || '').replace(/\D/g, '');
       mobileKey = digits.length >= 10 ? digits.slice(-10) : '';
     }
-    const used = Number(await this.db.scalar<string>(PLAY_COUNT_SQL, [business.businessid, customerIdForCount, mobileKey, 0]) || 0);
-    if (used >= SHOP_PLAY_LIMIT) throw new BadRequestException('You have used both plays at this shop.');
+    const code = gameCode || 'SpinWheel';
+    const used = Number(await this.db.scalar<string>(PLAY_COUNT_SQL, [code, customerIdForCount, mobileKey, 0]) || 0);
+    if (used >= GAME_PLAY_LIMIT) throw new BadRequestException('You have used both plays of this game.');
     const index = pickPrizeIndex(prizes, Math.random() * 100);
     const prize = prizes[index];
     let customerId = 0;
