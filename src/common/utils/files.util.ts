@@ -38,6 +38,7 @@ async function styledQr(text: string, theme?: string | null, logoPath?: string |
   const dim = art + pad * 2;
   const origin = pad + quiet * cell;
   const color = theme && /^#[0-9a-fA-F]{6}$/.test(theme) ? theme : '#0e6b63';
+  const ink = '#111111';
   const accent = tint(color, 0.45);
   const wash = tint(color, 0.9);
   const finder = (x: number, y: number) => (x < 7 && y < 7) || (x >= size - 7 && y < 7) || (x < 7 && y >= size - 7);
@@ -70,18 +71,18 @@ async function styledQr(text: string, theme?: string | null, logoPath?: string |
       if (!dark(x, y)) continue;
       const px = origin + x * cell + cell / 2;
       const py = origin + y * cell + cell / 2;
-      marks.push(`<circle cx="${px}" cy="${py}" r="${radius.toFixed(2)}" fill="${color}"/>`);
-      if (dark(x + 1, y)) marks.push(`<rect x="${px}" y="${(py - radius).toFixed(2)}" width="${cell}" height="${(radius * 2).toFixed(2)}" fill="${color}"/>`);
-      if (dark(x, y + 1)) marks.push(`<rect x="${(px - radius).toFixed(2)}" y="${py}" width="${(radius * 2).toFixed(2)}" height="${cell}" fill="${color}"/>`);
+      marks.push(`<circle cx="${px}" cy="${py}" r="${radius.toFixed(2)}" fill="${ink}"/>`);
+      if (dark(x + 1, y)) marks.push(`<rect x="${px}" y="${(py - radius).toFixed(2)}" width="${cell}" height="${(radius * 2).toFixed(2)}" fill="${ink}"/>`);
+      if (dark(x, y + 1)) marks.push(`<rect x="${(px - radius).toFixed(2)}" y="${py}" width="${(radius * 2).toFixed(2)}" height="${cell}" fill="${ink}"/>`);
     }
   }
   const eye = (moduleX: number, moduleY: number) => {
     const x = origin + moduleX * cell;
     const y = origin + moduleY * cell;
     const outer = 7 * cell;
-    return `<rect x="${x}" y="${y}" width="${outer}" height="${outer}" rx="${cell * 1.7}" fill="${color}"/>
+    return `<rect x="${x}" y="${y}" width="${outer}" height="${outer}" rx="${cell * 1.7}" fill="${ink}"/>
       <rect x="${x + cell}" y="${y + cell}" width="${5 * cell}" height="${5 * cell}" rx="${cell * 1.15}" fill="#fff"/>
-      <rect x="${x + 2 * cell}" y="${y + 2 * cell}" width="${3 * cell}" height="${3 * cell}" rx="${cell * 0.85}" fill="${color}"/>`;
+      <rect x="${x + 2 * cell}" y="${y + 2 * cell}" width="${3 * cell}" height="${3 * cell}" rx="${cell * 0.85}" fill="${ink}"/>`;
   };
   const mid = dim / 2;
   const frame = `
@@ -105,7 +106,7 @@ async function styledQr(text: string, theme?: string | null, logoPath?: string |
     <path d="M ${dim - 30} ${mid} L ${dim - 22} ${mid + 6} L ${dim - 14} ${mid} L ${dim - 22} ${mid - 6} Z" fill="${color}"/>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${dim}" height="${dim}" viewBox="0 0 ${dim} ${dim}">
-  <!-- rs-qr-v3 -->
+  <!-- rs-qr-v4 -->
   <rect width="${dim}" height="${dim}" rx="36" fill="${wash}"/>
   <rect x="${pad - 10}" y="${pad - 10}" width="${art + 20}" height="${art + 20}" rx="22" fill="#fff"/>
   ${frame}
