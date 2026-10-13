@@ -22,7 +22,13 @@ export class NotificationsService {
     return { publicKey: loadConfig().vapidPublicKey || '' };
   }
 
-  templates(businessId: number) { return this.db.many(`SELECT * FROM public."NotificationTemplates" WHERE businessid=$1 ORDER BY createddate DESC`, [businessId]); }
+  async templates(businessId: number) {
+    const [rows, phones] = await Promise.all([
+      this.db.many(`SELECT notificationid, title, message, recipientcount, targetsegment, createddate FROM public."Notifications" WHERE businessid=$1 ORDER BY createddate DESC`, [businessId]),
+      this.db.scalar<string>(`SELECT COUNT(*)::text FROM public."CustomerDeviceTokens" d WHERE d.isactive=true AND d.customerid IN (${segmentSql('All')})`, [businessId]),
+    ]);
+    return { templates: rows, phones: Number(phones || 0) };
+  }
   async saveTemplate(businessId: number, input: TemplateDto) {
     if (input.id) {
       await this.db.query(`UPDATE public."NotificationTemplates" SET title=$1, message=$2, isactive=$3, updateddate=CURRENT_TIMESTAMP WHERE templateid=$4 AND businessid=$5`, [input.title, input.message, input.isActive !== 'false', Number(input.id), businessId]);
@@ -45,7 +51,7 @@ export class NotificationsService {
       return log.rows[0].notificationid as number;
     });
 
-    const ids = recipients.map((row) => row.customerid);
+    const ids = recipients.map((row) => Number(row.customerid)).filter((id) => Number.isFinite(id));
     const shop = await this.db.one<{ businessname: string }>(`SELECT businessname FROM public."Businesses" WHERE businessid=$1`, [businessId]);
     const delivered = await this.alertCustomers(ids, body.title, shop?.businessname ? `${shop.businessname}: ${body.message}` : body.message, '/customer/notifications', `offer-${notificationId}`);
     return { notificationId, recipientCount: recipients.length, browserPush: delivered };
@@ -56,17 +62,22 @@ export class NotificationsService {
   }
 
   private async deliverBrowserPush(customerIds: number[], title: string, message: string, url: string, tag?: string) {
-    if (!this.pushReady || !customerIds.length) return { attempted: 0, sent: 0 };
+    const ids = [...new Set(customerIds.map((id) => Number(id)).filter((id) => Number.isFinite(id)))];
+    if (!this.pushReady || !ids.length) return { attempted: 0, sent: 0 };
+    await this.ensureDeviceTable();
     const tokens = await this.db.many<{ deviceid: number; devicetoken: string }>(
       `SELECT deviceid, devicetoken FROM public."CustomerDeviceTokens" WHERE isactive=true AND customerid = ANY($1::int[])`,
-      [customerIds],
+      [ids],
     );
     let sent = 0;
     const payload = JSON.stringify({ title, body: message, url, tag: tag || title });
     for (const row of tokens) {
       try {
         const subscription = JSON.parse(row.devicetoken);
-        if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) continue;
+        if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
+          await this.db.query(`UPDATE public."CustomerDeviceTokens" SET isactive=false WHERE deviceid=$1`, [row.deviceid]);
+          continue;
+        }
         await webpush.sendNotification(subscription, payload);
         sent += 1;
       } catch (error: any) {
@@ -108,32 +119,26 @@ export class NotificationsService {
 
   async push(customerId: number | null, token: string, action = 'subscribe') {
     await this.ensureDeviceTable();
-    if (!token?.trim()) throw new BadRequestException('Missing push subscription.');
+    const raw = typeof token === 'string' ? token.trim() : '';
+    if (!raw) throw new BadRequestException('Missing push subscription.');
     if (action === 'unsubscribe') {
-      await this.db.query(`UPDATE public."CustomerDeviceTokens" SET isactive=false WHERE devicetoken=$1`, [token]);
+      await this.db.query(`UPDATE public."CustomerDeviceTokens" SET isactive=false WHERE devicetoken=$1 OR devicetoken LIKE $2`, [raw, `%${raw.slice(0, 80)}%`]);
       return { ok: true };
     }
     if (!customerId) throw new BadRequestException('Sign in as a customer to enable browser notifications.');
-    // Store full PushSubscription JSON; unique by endpoint when JSON string changes, so also key by endpoint if possible.
-    let endpoint = token;
-    try {
-      const parsed = JSON.parse(token);
-      endpoint = parsed.endpoint || token;
-    } catch {
-      /* plain token */
+    let parsed: { endpoint?: string; keys?: { p256dh?: string; auth?: string } } | null = null;
+    try { parsed = JSON.parse(raw); } catch { parsed = null; }
+    if (!parsed?.endpoint || !parsed.keys?.p256dh || !parsed.keys?.auth) {
+      throw new BadRequestException('Turn browser alerts on again from the customer home.');
     }
+    const stored = JSON.stringify({ endpoint: parsed.endpoint, keys: { p256dh: parsed.keys.p256dh, auth: parsed.keys.auth } });
+    await this.db.query(`UPDATE public."CustomerDeviceTokens" SET isactive=false WHERE customerid=$1 AND devicetoken LIKE $2`, [customerId, `${parsed.endpoint.slice(0, 80)}%`]);
     await this.db.query(
       `INSERT INTO public."CustomerDeviceTokens" (customerid, devicetoken, devicetype, isactive)
        VALUES ($1,$2,'Web',true)
        ON CONFLICT (devicetoken) DO UPDATE SET isactive=true, customerid=$1`,
-      [customerId, token],
+      [customerId, stored],
     );
-    // Deactivate older rows for same endpoint with different JSON serialization
-    await this.db.query(
-      `UPDATE public."CustomerDeviceTokens" SET isactive=false
-       WHERE customerid=$1 AND isactive=true AND devicetoken <> $2 AND devicetoken LIKE $3`,
-      [customerId, token, `%${endpoint.slice(0, 80)}%`],
-    ).catch(() => undefined);
     return { ok: true };
   }
 }

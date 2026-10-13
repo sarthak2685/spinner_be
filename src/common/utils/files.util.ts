@@ -37,10 +37,10 @@ async function styledQr(text: string, theme?: string | null, logoPath?: string |
   const art = (size + quiet * 2) * cell;
   const dim = art + pad * 2;
   const origin = pad + quiet * cell;
-  const color = theme && /^#[0-9a-fA-F]{6}$/.test(theme) ? theme : '#0e6b63';
+  const chosen = (theme || '').trim();
+  const color = /^#[0-9a-fA-F]{6}$/.test(chosen) && chosen.toLowerCase() !== '#0e6b63' ? chosen : '#111111';
   const ink = '#111111';
-  const accent = tint(color, 0.45);
-  const wash = tint(color, 0.9);
+  const accent = tint(color, 0.55);
   const finder = (x: number, y: number) => (x < 7 && y < 7) || (x >= size - 7 && y < 7) || (x < 7 && y >= size - 7);
   let logo = '';
   let logoSpan = 0;
@@ -106,8 +106,8 @@ async function styledQr(text: string, theme?: string | null, logoPath?: string |
     <path d="M ${dim - 30} ${mid} L ${dim - 22} ${mid + 6} L ${dim - 14} ${mid} L ${dim - 22} ${mid - 6} Z" fill="${color}"/>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${dim}" height="${dim}" viewBox="0 0 ${dim} ${dim}">
-  <!-- rs-qr-v4 -->
-  <rect width="${dim}" height="${dim}" rx="36" fill="${wash}"/>
+  <!-- rs-qr-v5 -->
+  <rect width="${dim}" height="${dim}" rx="36" fill="#ffffff"/>
   <rect x="${pad - 10}" y="${pad - 10}" width="${art + 20}" height="${art + 20}" rx="22" fill="#fff"/>
   ${frame}
   ${marks.join('')}
