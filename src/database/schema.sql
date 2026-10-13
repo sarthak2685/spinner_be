@@ -388,6 +388,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS businesses_publicslug_lower ON public."Busines
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS activeto TIMESTAMP;
 UPDATE public."Businesses" SET activeto = CURRENT_TIMESTAMP + INTERVAL '7 days' WHERE activeto IS NULL;
 
+CREATE TABLE IF NOT EXISTS public."LandingMedia" (
+  mediakey VARCHAR(40) PRIMARY KEY,
+  title VARCHAR(120),
+  filepath TEXT,
+  originalname VARCHAR(200),
+  published BOOLEAN NOT NULL DEFAULT true,
+  sortorder INTEGER NOT NULL DEFAULT 0,
+  updateddate TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE public."LandingMedia" ADD COLUMN IF NOT EXISTS title VARCHAR(120);
+ALTER TABLE public."LandingMedia" ADD COLUMN IF NOT EXISTS sortorder INTEGER NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS public."DemoRequests" (
   demorequestid SERIAL PRIMARY KEY,
   contactname VARCHAR(200) NOT NULL,

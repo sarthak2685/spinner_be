@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Injectable, Module, NotFoundException, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Injectable, Module, NotFoundException, Param, ParseIntPipe, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseService } from '../../database/database.module';
 import { loadConfig } from '../../config/env';
@@ -12,6 +13,9 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser, Roles } from '../../common/decorators/auth.decorators';
 import { AuthUser } from '../../common/auth-user';
 import { toCsv } from '../../common/utils/csv.util';
+import { pipeMedia } from '../../common/utils/media-stream.util';
+import { LandingMediaModule } from '../landing-media/landing-media.module';
+import { LandingMediaService } from '../landing-media/landing-media.service';
 
 type ReviewBody = { token?: string; customerName?: string; keywords?: string[]; rating?: number; body?: string; phone?: string; email?: string; message?: string };
 type DemoBody = { name?: string; mobile?: string; email?: string; businessName?: string; businessType?: string; city?: string };
@@ -201,6 +205,11 @@ export class PublicService {
     return this.db.many(`SELECT * FROM public."DemoRequests" ORDER BY createddate DESC`);
   }
 
+  async stats() {
+    const businesses = await this.db.scalar<string>(`SELECT COUNT(1)::text FROM public."Businesses"`);
+    return { businesses: Number(businesses) || 0 };
+  }
+
   feedback(businessId: number) {
     return this.ensure().then(() => this.db.many(`SELECT * FROM public."GuestFeedback" WHERE businessid=$1 ORDER BY createddate DESC`, [businessId]));
   }
@@ -215,7 +224,18 @@ export class PublicService {
 
 @Controller('public')
 export class PublicController {
-  constructor(private readonly pub: PublicService) {}
+  constructor(private readonly pub: PublicService, private readonly media: LandingMediaService) {}
+  @Get('how-video') howVideo() { return this.media.publicStatus(); }
+  @Get('how-video/stream')
+  async howVideoStream(@Req() req: Request, @Res() res: Response) {
+    try {
+      const id = typeof req.query.id === 'string' ? req.query.id : '';
+      const file = await this.media.open(true, id);
+      await pipeMedia(req, res, file.absolute, file.mime);
+    } catch {
+      if (!res.headersSent) res.status(404).json({ message: 'Video is not available.' });
+    }
+  }
   @Get('hub/:token') hub(@Param('token') token: string) { return this.pub.hub(token); }
   @Get('menu/:token') menu(@Param('token') token: string) { return this.pub.catalog(token); }
   @Get('review/:token') review(@Param('token') token: string) { return this.pub.hub(token); }
@@ -223,6 +243,7 @@ export class PublicController {
   @Post('reviews') saveReview(@Body() body: ReviewBody) { return this.pub.saveReview(body); }
   @Post('feedback') saveFeedback(@Body() body: ReviewBody) { return this.pub.saveFeedback(body); }
   @Post('demos') demos(@Body() body: DemoBody) { return this.pub.saveDemo(body); }
+  @Get('stats') stats() { return this.pub.stats(); }
 }
 
 @Controller()
@@ -237,5 +258,5 @@ export class GuestInboxController {
   @Post('business/guest-feedback/:id') @Roles('BusinessAdmin') status(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() body: { status?: string }) { return this.pub.feedbackStatus(user.businessId!, id, body.status || 'read'); }
 }
 
-@Module({ imports: [AuthModule], controllers: [PublicController, GuestInboxController], providers: [PublicService] })
+@Module({ imports: [AuthModule, LandingMediaModule], controllers: [PublicController, GuestInboxController], providers: [PublicService] })
 export class PublicModule {}

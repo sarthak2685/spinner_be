@@ -83,10 +83,13 @@ export class NotificationsService {
 
   inbox(customerId: number, filter?: string) {
     const params: unknown[] = [customerId];
-    let sql = `SELECT * FROM public."CustomerNotifications" WHERE customerid=$1 AND isdeleted=false`;
-    if (filter === 'Unread') sql += ` AND isread=false`;
-    else if (filter && filter !== 'All') { params.push(filter); sql += ` AND notificationtype=$2`; }
-    return this.db.many(`${sql} ORDER BY createddate DESC`, params);
+    let sql = `SELECT n.customernotificationid, n.title, n.message, n.notificationtype, n.isread, n.createddate, n.businessid, b.businessname
+      FROM public."CustomerNotifications" n
+      LEFT JOIN public."Businesses" b ON b.businessid = n.businessid
+      WHERE n.customerid=$1 AND n.isdeleted=false`;
+    if (filter === 'Unread') sql += ` AND n.isread=false`;
+    else if (filter && filter !== 'All') { params.push(filter); sql += ` AND n.notificationtype=$2`; }
+    return this.db.many(`${sql} ORDER BY n.createddate DESC`, params);
   }
   async markRead(customerId: number, id: number) { await this.db.query(`UPDATE public."CustomerNotifications" SET isread=true, readdate=CURRENT_TIMESTAMP WHERE customernotificationid=$1 AND customerid=$2`, [id, customerId]); return { ok: true }; }
   async markAll(customerId: number) { await this.db.query(`UPDATE public."CustomerNotifications" SET isread=true, readdate=CURRENT_TIMESTAMP WHERE customerid=$1 AND isread=false`, [customerId]); return { ok: true }; }

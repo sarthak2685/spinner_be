@@ -1,4 +1,4 @@
-import { isValidEmail, isValidMobile, normalizeMobile, validateImage } from './validation.util';
+import { isValidEmail, isValidMobile, normalizeMobile, validateImage, validateVideo } from './validation.util';
 
 describe('validation', () => {
   it('accepts only a 10-digit Indian mobile', () => {
@@ -16,5 +16,10 @@ describe('validation', () => {
     expect(isValidEmail('bad')).toBe(false);
     expect(validateImage(undefined)).toBeNull();
     expect(validateImage({ originalname: 'a.gif', mimetype: 'image/gif', size: 10 })).toMatch(/Only image/);
+    expect(validateVideo(undefined)).toMatch(/Choose/);
+    expect(validateVideo({ originalname: 'clip.gif', mimetype: 'image/gif', size: 20 })).toMatch(/MP4/);
+    expect(validateVideo({ originalname: 'clip.mp4', mimetype: 'video/mp4', size: 81 * 1024 * 1024 })).toMatch(/80/);
+    expect(validateVideo({ originalname: 'clip.mp4', mimetype: 'video/mp4', size: 20 })).toBeNull();
+    expect(validateVideo({ originalname: 'clip.webm', mimetype: 'video/webm', size: 20 })).toBeNull();
   });
 });
