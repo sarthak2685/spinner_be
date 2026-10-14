@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS public."Orders" (
 CREATE TABLE IF NOT EXISTS public."OrderItems" (
   orderitemid SERIAL PRIMARY KEY,
   orderid INTEGER NOT NULL REFERENCES public."Orders"(orderid) ON DELETE CASCADE,
-  itemid INTEGER NOT NULL REFERENCES public."MenuItems"(itemid) ON DELETE RESTRICT,
+  itemid INTEGER REFERENCES public."MenuItems"(itemid) ON DELETE SET NULL,
   itemname VARCHAR(200) NOT NULL,
   unitprice NUMERIC(10,2) NOT NULL,
   quantity INTEGER NOT NULL,
@@ -377,6 +377,9 @@ CREATE TABLE IF NOT EXISTS public."MenuItemAddons" (
 
 ALTER TABLE public."Orders" ADD COLUMN IF NOT EXISTS fulfillment VARCHAR(20) DEFAULT 'DineIn';
 ALTER TABLE public."Orders" ADD COLUMN IF NOT EXISTS deliveryaddress TEXT;
+ALTER TABLE public."OrderItems" ALTER COLUMN itemid DROP NOT NULL;
+ALTER TABLE public."OrderItems" DROP CONSTRAINT IF EXISTS "OrderItems_itemid_fkey";
+ALTER TABLE public."OrderItems" ADD CONSTRAINT "OrderItems_itemid_fkey" FOREIGN KEY (itemid) REFERENCES public."MenuItems"(itemid) ON DELETE SET NULL;
 ALTER TABLE public."OrderItems" ADD COLUMN IF NOT EXISTS optionname VARCHAR(80);
 ALTER TABLE public."OrderItems" ADD COLUMN IF NOT EXISTS addons TEXT;
 ALTER TABLE public."BusinessExperienceSettings" ADD COLUMN IF NOT EXISTS reviewkeywords TEXT;

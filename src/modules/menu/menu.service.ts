@@ -88,7 +88,11 @@ export class MenuService {
     const row = await this.db.one<{ categoryid: number }>(`INSERT INTO public."MenuCategories" (businessid, categoryname, displayorder, isactive) VALUES ($1,$2,$3,$4) RETURNING categoryid`, [businessId, input.categoryName, Number(input.displayOrder || 0), input.isActive !== 'false']);
     return { id: row!.categoryid };
   }
-  async removeCategory(businessId: number, id: number) { await this.db.query(`DELETE FROM public."MenuCategories" WHERE categoryid=$1 AND businessid=$2`, [id, businessId]); return { ok: true }; }
+  async removeCategory(businessId: number, id: number) {
+    await this.keepOrderHistory();
+    await this.db.query(`DELETE FROM public."MenuCategories" WHERE categoryid=$1 AND businessid=$2`, [id, businessId]);
+    return { ok: true };
+  }
   async items(businessId: number, categoryId?: number) {
     await this.ensureImageColumn();
     const rows = categoryId
@@ -172,5 +176,22 @@ export class MenuService {
     if (!created) throw new BadRequestException('No valid rows. Use columns: Category, Item, Price, Description.');
     return { created, categoriesCreated, skipped };
   }
-  async removeItem(businessId: number, id: number) { await this.db.query(`DELETE FROM public."MenuItems" WHERE itemid=$1 AND businessid=$2`, [id, businessId]); return { ok: true }; }
+  async removeItem(businessId: number, id: number) {
+    await this.keepOrderHistory();
+    await this.db.query(`DELETE FROM public."MenuItems" WHERE itemid=$1 AND businessid=$2`, [id, businessId]);
+    return { ok: true };
+  }
+
+  private historyReady: Promise<void> | null = null;
+  private keepOrderHistory() {
+    this.historyReady ??= (async () => {
+      await this.db.query(`ALTER TABLE public."OrderItems" ALTER COLUMN itemid DROP NOT NULL`);
+      await this.db.query(`ALTER TABLE public."OrderItems" DROP CONSTRAINT IF EXISTS "OrderItems_itemid_fkey"`);
+      await this.db.query(`ALTER TABLE public."OrderItems" ADD CONSTRAINT "OrderItems_itemid_fkey" FOREIGN KEY (itemid) REFERENCES public."MenuItems"(itemid) ON DELETE SET NULL`);
+    })().catch((err) => {
+      this.historyReady = null;
+      throw err;
+    });
+    return this.historyReady;
+  }
 }
