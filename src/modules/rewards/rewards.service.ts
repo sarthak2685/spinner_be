@@ -85,7 +85,7 @@ export class RewardsService {
       ORDER BY rr.rewardredemptionid DESC
       LIMIT 1
     ) claim ON true`;
-    let sql = `SELECT r.*, b.businessname, b.businesstoken, claim.status AS redemptionstatus
+    let sql = `SELECT r.*, b.businessname, b.businesstoken, b.publicslug, claim.status AS redemptionstatus
       FROM public."Rewards" r
       JOIN public."Businesses" b ON b.businessid=r.businessid
       ${claim}

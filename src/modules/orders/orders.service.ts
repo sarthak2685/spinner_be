@@ -90,9 +90,8 @@ export class OrdersService {
     if (!isValidMobile(mobile)) throw new BadRequestException('Enter the customer mobile as 10 digits.');
     const fulfillment = (FULFILLMENTS as readonly string[]).includes(body.fulfillment || '') ? body.fulfillment as Fulfillment : null;
     if (!fulfillment) throw new BadRequestException('Choose dine in, delivery, or pickup.');
-    const station = sanitizeHtml(body.tableNumber || '').trim().slice(0, 100);
+    const station = sanitizeHtml(body.tableNumber || '').trim().slice(0, 100) || '0';
     const address = sanitizeHtml(body.deliveryAddress || '').trim().slice(0, 300);
-    if (fulfillment === 'DineIn' && !station) throw new BadRequestException('Table or room number is required for dine in.');
     if (fulfillment === 'Delivery' && !address) throw new BadRequestException('Delivery address is required.');
     const cart = consolidateCart(body.items || []);
     if (!cart.size) throw new BadRequestException('Your cart is empty.');
