@@ -18,11 +18,27 @@ export class GamesService {
     return this.db.many(`SELECT * FROM public."GameConfigurations" WHERE businessid=$1 AND gamecode=$2 ORDER BY createddate DESC`, [businessId, gameCode]);
   }
   async create(businessId: number, gameCode: string, name: string) {
-    const row = await this.db.one<{ gameconfigurationid: number }>(`INSERT INTO public."GameConfigurations" (businessid, configurationname, gamecode, isactive) VALUES ($1,$2,$3,true) RETURNING gameconfigurationid`, [businessId, name || `Default ${gameCode}`, gameCode]);
+    const row = await this.db.one<{ gameconfigurationid: number }>(`INSERT INTO public."GameConfigurations" (businessid, configurationname, gamecode, isactive) VALUES ($1,$2,$3,false) RETURNING gameconfigurationid`, [businessId, name || `Default ${gameCode}`, gameCode]);
+    const live = Number(await this.db.scalar<string>(`SELECT COUNT(1)::text FROM public."GameConfigurations" WHERE businessid=$1 AND gamecode=$2 AND isactive=true`, [businessId, gameCode]) || 0);
+    if (!live) await this.toggle(businessId, row!.gameconfigurationid, true);
     return { id: row!.gameconfigurationid };
   }
   async toggle(businessId: number, id: number, isActive: boolean) {
+    const row = await this.db.one<{ gamecode: string }>(`SELECT gamecode FROM public."GameConfigurations" WHERE gameconfigurationid=$1 AND businessid=$2`, [id, businessId]);
+    if (!row) throw new NotFoundException('Game configuration not found.');
+    if (isActive) await this.db.query(`UPDATE public."GameConfigurations" SET isactive=false WHERE businessid=$1 AND gamecode=$2`, [businessId, row.gamecode]);
     await this.db.query(`UPDATE public."GameConfigurations" SET isactive=$1 WHERE gameconfigurationid=$2 AND businessid=$3`, [isActive, id, businessId]);
+    return { ok: true };
+  }
+  async remove(businessId: number, id: number) {
+    const row = await this.db.one<{ gamecode: string; isactive: boolean }>(`SELECT gamecode, isactive FROM public."GameConfigurations" WHERE gameconfigurationid=$1 AND businessid=$2`, [id, businessId]);
+    if (!row) throw new NotFoundException('Game configuration not found.');
+    await this.db.query(`DELETE FROM public."PrizeConfigurations" WHERE gameconfigurationid=$1`, [id]);
+    await this.db.query(`DELETE FROM public."GameConfigurations" WHERE gameconfigurationid=$1 AND businessid=$2`, [id, businessId]);
+    if (row.isactive) {
+      const next = await this.db.one<{ gameconfigurationid: number }>(`SELECT gameconfigurationid FROM public."GameConfigurations" WHERE businessid=$1 AND gamecode=$2 ORDER BY gameconfigurationid LIMIT 1`, [businessId, row.gamecode]);
+      if (next) await this.toggle(businessId, next.gameconfigurationid, true);
+    }
     return { ok: true };
   }
   prizes(configId: number, businessId: number) {
@@ -38,7 +54,10 @@ export class GamesService {
     await this.db.query(`UPDATE public."PrizeConfigurations" SET prizename=$1, coins=$2, winningpercentage=$3, isactive=$4 WHERE prizeconfigurationid=$5`, [input.prizeName, Number(input.coins || 0), Number(input.winningPercentage || 0), input.isActive !== 'false', Number(input.id)]);
     return { id: Number(input.id) };
   }
-  async removePrize(id: number) { await this.db.query(`DELETE FROM public."PrizeConfigurations" WHERE prizeconfigurationid=$1`, [id]); return { ok: true }; }
+  async removePrize(businessId: number, id: number) {
+    await this.db.query(`DELETE FROM public."PrizeConfigurations" p USING public."GameConfigurations" g WHERE p.prizeconfigurationid=$1 AND p.gameconfigurationid=g.gameconfigurationid AND g.businessid=$2`, [id, businessId]);
+    return { ok: true };
+  }
 
   async play(token: string, gameCode: string, user: AuthUser | null, ip: string) {
     if (this.rates.check(ip, 'PlayGame', 10, 1)) throw new BadRequestException('Too many requests. Please try again later.');
@@ -46,7 +65,18 @@ export class GamesService {
     if (!business || business.isactive === false) throw new NotFoundException('Business not found or is currently inactive.');
     assertShopOpen(business);
     const prizes = await this.db.many<{ prizeconfigurationid: number; prizename: string; coins: number; winningpercentage: number; gamecode: string }>(
-      `SELECT p.prizeconfigurationid, p.prizename, p.coins, p.winningpercentage, s.gamecode FROM public."PrizeConfigurations" p INNER JOIN public."GameConfigurations" s ON p.gameconfigurationid=s.gameconfigurationid WHERE s.businessid=$1 AND s.gamecode=$2 AND s.isactive=true AND p.isactive=true ORDER BY p.prizeconfigurationid`,
+      `SELECT p.prizeconfigurationid, p.prizename, p.coins, p.winningpercentage, s.gamecode
+       FROM public."PrizeConfigurations" p
+       INNER JOIN public."GameConfigurations" s ON p.gameconfigurationid=s.gameconfigurationid
+       WHERE s.businessid=$1 AND s.gamecode=$2 AND s.isactive=true AND p.isactive=true
+         AND s.gameconfigurationid = (
+           SELECT g.gameconfigurationid FROM public."GameConfigurations" g
+           WHERE g.businessid=$1 AND g.gamecode=$2 AND g.isactive=true
+             AND EXISTS (SELECT 1 FROM public."PrizeConfigurations" p2 WHERE p2.gameconfigurationid=g.gameconfigurationid AND p2.isactive=true)
+           ORDER BY g.gameconfigurationid DESC
+           LIMIT 1
+         )
+       ORDER BY p.prizeconfigurationid`,
       [business.businessid, gameCode || 'SpinWheel'],
     );
     if (!prizes.length) throw new BadRequestException('Prizes are not configured for this game campaign.');

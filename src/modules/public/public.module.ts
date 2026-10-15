@@ -84,9 +84,10 @@ export class PublicService {
     const categories = await this.db.many(`SELECT * FROM public."MenuCategories" WHERE businessid=$1 AND isactive=true ORDER BY displayorder, categoryname`, [businessId]);
     const items = await this.db.many<{ itemid: number }>(`SELECT * FROM public."MenuItems" WHERE businessid=$1 AND isactive=true AND isavailable=true ORDER BY displayorder, itemname`, [businessId]);
     const ids = items.map((item) => item.itemid);
+    const priced = [] as { itemid: number }[];
     const [options, addons, offers] = await Promise.all([
-      ids.length ? this.db.many(`SELECT optionid, itemid, optionname, price FROM public."MenuItemOptions" WHERE itemid = ANY($1::int[]) ORDER BY displayorder, optionid`, [ids]) : [],
-      ids.length ? this.db.many(`SELECT addonid, itemid, addonname, price FROM public."MenuItemAddons" WHERE itemid = ANY($1::int[]) ORDER BY displayorder, addonid`, [ids]) : [],
+      ids.length ? this.db.many<{ itemid: number }>(`SELECT optionid, itemid, optionname, price FROM public."MenuItemOptions" WHERE itemid = ANY($1::int[]) ORDER BY displayorder, optionid`, [ids]) : priced,
+      ids.length ? this.db.many<{ itemid: number }>(`SELECT addonid, itemid, addonname, price FROM public."MenuItemAddons" WHERE itemid = ANY($1::int[]) ORDER BY displayorder, addonid`, [ids]) : priced,
       this.db.many(`SELECT rewardid, rewardname, description, coinsrequired, imagepath FROM public."Rewards" WHERE businessid=$1 AND isactive=true ORDER BY coinsrequired`, [businessId]),
     ]);
     return {

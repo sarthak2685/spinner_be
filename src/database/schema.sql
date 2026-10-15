@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS public."Businesses" (
   facebookurl VARCHAR(500),
   instagramurl VARCHAR(500),
   linkedinurl VARCHAR(500),
+  wifiname VARCHAR(120),
+  wifipassword VARCHAR(120),
   twitterurl VARCHAR(500),
   youtubeurl VARCHAR(500),
   whatsappnumber VARCHAR(20),
@@ -420,6 +422,8 @@ ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS facebookurl VARCHAR(500);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS instagramurl VARCHAR(500);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS linkedinurl VARCHAR(500);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS wifiname VARCHAR(120);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS wifipassword VARCHAR(120);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS twitterurl VARCHAR(500);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS youtubeurl VARCHAR(500);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS whatsappnumber VARCHAR(20);

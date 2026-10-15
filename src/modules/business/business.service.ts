@@ -45,16 +45,18 @@ export class BusinessService {
     const imageError = validateImage(logo) || validateImage(banner);
     if (imageError) throw new BadRequestException(imageError);
     if (!String(input.address || '').trim() || !Number(input.countryId) || !Number(input.stateId)) throw new BadRequestException('Address, country, and state are required.');
+    await this.db.query(`ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS wifiname VARCHAR(120)`);
+    await this.db.query(`ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS wifipassword VARCHAR(120)`);
     const logoPath = logo ? await saveUpload(logo, 'logos') : null;
     const bannerPath = banner ? await saveUpload(banner, 'banners') : null;
     await this.db.query(
       `UPDATE public."Businesses" SET businessname=$1, phone=$2, email=$3, address=$4, tagline=$5, description=$6,
-        facebookurl=$7, instagramurl=$8, linkedinurl=$9, twitterurl=$10, youtubeurl=$11, whatsappnumber=$12, website=$13,
-        supportemail=$14, themecolor=$15, countryid=$16, stateid=$17, districtid=$18, cityid=$19, pincode=$20,
-        latitude=$21, longitude=$22, googlemapurl=$23, googlereviewurl=$24, businesstypeid=COALESCE($25, businesstypeid),
-        logoimagepath=COALESCE($26, logoimagepath), bannerimagepath=COALESCE($27, bannerimagepath) WHERE businessid=$28`,
+        facebookurl=$7, instagramurl=$8, wifiname=$9, wifipassword=$10, twitterurl=$11, youtubeurl=$12, whatsappnumber=$13, website=$14,
+        supportemail=$15, themecolor=$16, countryid=$17, stateid=$18, districtid=$19, cityid=$20, pincode=$21,
+        latitude=$22, longitude=$23, googlemapurl=$24, googlereviewurl=$25, businesstypeid=COALESCE($26, businesstypeid),
+        logoimagepath=COALESCE($27, logoimagepath), bannerimagepath=COALESCE($28, bannerimagepath) WHERE businessid=$29`,
       [input.businessName, input.phone, input.email, input.address, input.tagline || null, input.description || null,
-        input.facebookUrl || null, input.instagramUrl || null, input.linkedinUrl || null, input.twitterUrl || null, input.youtubeUrl || null,
+        input.facebookUrl || null, input.instagramUrl || null, input.wifiName || null, input.wifiPassword || null, input.twitterUrl || null, input.youtubeUrl || null,
         input.whatsappNumber || null, input.website || null, input.supportEmail || null, input.themeColor || null,
         numOrNull(input.countryId), numOrNull(input.stateId), numOrNull(input.districtId), numOrNull(input.cityId), input.pincode || null,
         input.latitude || null, input.longitude || null, input.googleMapUrl || null, input.googleReviewUrl || null, numOrNull(input.businessTypeId),

@@ -8,6 +8,8 @@ export class BusinessProfileDto {
   facebookUrl?: string;
   instagramUrl?: string;
   linkedinUrl?: string;
+  wifiName?: string;
+  wifiPassword?: string;
   twitterUrl?: string;
   youtubeUrl?: string;
   whatsappNumber?: string;

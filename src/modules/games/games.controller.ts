@@ -19,12 +19,14 @@ export class GamesController {
   create(@CurrentUser() user: AuthUser, @Param('code') code: string, @Body() body: GameDto) { return this.games.create(user.businessId!, code, body.name); }
   @Post('business/games/:id/active') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('BusinessAdmin')
   toggle(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() body: { isActive: boolean }) { return this.games.toggle(user.businessId!, id, body.isActive); }
+  @Post('business/games/:id/delete') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('BusinessAdmin')
+  removeConfig(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) { return this.games.remove(user.businessId!, id); }
   @Get('business/prizes/:configId') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('BusinessAdmin')
   prizes(@CurrentUser() user: AuthUser, @Param('configId', ParseIntPipe) configId: number) { return this.games.prizes(configId, user.businessId!); }
   @Post('business/prizes') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('BusinessAdmin')
   save(@CurrentUser() user: AuthUser, @Body() body: PrizeDto) { return this.games.savePrize(user.businessId!, body); }
   @Post('business/prizes/:id/delete') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('BusinessAdmin')
-  remove(@Param('id', ParseIntPipe) id: number) { return this.games.removePrize(id); }
+  remove(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) { return this.games.removePrize(user.businessId!, id); }
   @Post('public/play')
   play(@Body() body: PlayDto, @Req() req: Request) { return this.games.play(body.token, body.gameCode || 'SpinWheel', this.user(req), clientIp(req.headers)); }
   @Get('customer/prizes') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('Customer')
