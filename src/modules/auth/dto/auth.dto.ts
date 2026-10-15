@@ -2,6 +2,7 @@ export class LoginDto {
   mobile!: string;
   password!: string;
   remember?: boolean;
+  email?: string;
 }
 
 export class ForgotDto {

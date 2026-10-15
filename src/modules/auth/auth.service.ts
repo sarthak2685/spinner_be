@@ -4,7 +4,7 @@ import { randomBytes, randomUUID } from 'crypto';
 import { DatabaseService } from '../../database/database.module';
 import { SchemaService } from '../../database/schema.service';
 import { hashPassword, verifyPassword } from '../../common/utils/password.util';
-import { normalizeMobile } from '../../common/utils/validation.util';
+import { isValidEmail, normalizeMobile } from '../../common/utils/validation.util';
 import { RateLimitService } from '../../common/utils/rate-limit.service';
 import { planGuestMerge } from '../../common/utils/guest-merge.util';
 import { PLAY_COUNT_SQL, keptGuestPlays } from '../../common/utils/plays.util';
@@ -130,7 +130,7 @@ export class AuthService implements OnModuleInit {
     await this.assertNotLocked(rawMobile, cleanMobile);
     const admin = await this.attemptAdmin(rawMobile, cleanMobile, password, body.remember);
     if (admin) return admin;
-    const customer = await this.attemptCustomer(rawMobile, cleanMobile, password, body.remember, guest);
+    const customer = await this.attemptCustomer(rawMobile, cleanMobile, password, body.remember, guest, body.email);
     if (customer) return customer;
     throw new UnauthorizedException('Invalid mobile number or password.');
   }
@@ -176,7 +176,7 @@ export class AuthService implements OnModuleInit {
     return { accessToken: this.sign(user), user, rememberToken, redirect: this.redirectFor(user.role) };
   }
 
-  private async attemptCustomer(rawMobile: string, cleanMobile: string, password: string, remember?: boolean, guest?: AuthUser | null) {
+  private async attemptCustomer(rawMobile: string, cleanMobile: string, password: string, remember?: boolean, guest?: AuthUser | null, email?: string) {
     const rows = await this.db.many<{ customerid: number; businessid: number | null; customername: string | null; passwordhash: string; failedloginattempts: number | null; businesstoken: string | null }>(
       `SELECT c.customerid, c.businessid, c.customername, c.passwordhash, c.failedloginattempts, b.businesstoken
        FROM public."Customers" c LEFT JOIN public."Businesses" b ON c.businessid = b.businessid
@@ -193,6 +193,13 @@ export class AuthService implements OnModuleInit {
       await this.db.query(`UPDATE public."Customers" SET passwordhash = $1 WHERE customerid = $2`, [hashPassword(password), matched.customerid]);
     }
     await this.db.query(`UPDATE public."Customers" SET failedloginattempts = 0, lockoutend = NULL WHERE customerid = $1`, [matched.customerid]);
+    const nextEmail = (email || '').trim().toLowerCase();
+    if (nextEmail) {
+      if (!isValidEmail(nextEmail)) throw new BadRequestException('Enter a valid email address.');
+      const taken = await this.db.scalar<string>(`SELECT COUNT(1)::text FROM public."Customers" WHERE LOWER(email) = $1 AND customerid <> $2 AND COALESCE(isdeleted, false) = false`, [nextEmail, matched.customerid]);
+      if (Number(taken) > 0) throw new BadRequestException('This email is already registered.');
+      await this.db.query(`UPDATE public."Customers" SET email = $1 WHERE customerid = $2`, [nextEmail, matched.customerid]);
+    }
     if (guest?.role === 'Customer' && guest.name?.startsWith('Guest_') && guest.id !== matched.customerid) await this.mergeGuest(guest.id, matched.customerid);
     const user: AuthUser = { id: matched.customerid, role: 'Customer', name: matched.customername || 'Customer', businessId: matched.businessid, businessToken: matched.businesstoken, kind: 'customer' };
     const rememberToken = remember ? await this.remember(null, user.id) : null;
