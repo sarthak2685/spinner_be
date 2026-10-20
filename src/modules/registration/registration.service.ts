@@ -67,7 +67,7 @@ export class RegistrationService {
         `INSERT INTO public."BusinessExperienceSettings" (businessid, menuenabled, playenabled, reviewenabled, stationlabel, stationplaceholder, catalogtitle)
          VALUES ($1,true,true,true,$2,$3,$4)
          ON CONFLICT (businessid) DO UPDATE SET stationlabel = EXCLUDED.stationlabel, stationplaceholder = EXCLUDED.stationplaceholder, catalogtitle = EXCLUDED.catalogtitle`,
-        [businessId, type?.stationlabel || 'Table / Room No.', type?.stationplaceholder || 'e.g., Table 4, Room 201', type?.catalogtitle || 'Online Menu'],
+        [businessId, type?.stationlabel || 'Table / Room No.', type?.stationplaceholder || '', type?.catalogtitle || 'Online Menu'],
       );
       const qrPath = await writeQr(token, { logoPath: logo || null });
       await client.query(`INSERT INTO public."QRCodes" (businessid, qrname, qrcodetext, code, imagepath, isactive) VALUES ($1,'Permanent QR Code',$2,$3,$4,true)`, [businessId, `${loadConfig().publicWebUrl}/play/${token}`, token, qrPath]);

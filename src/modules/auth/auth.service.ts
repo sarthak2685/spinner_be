@@ -8,6 +8,8 @@ import { isValidEmail, normalizeMobile } from '../../common/utils/validation.uti
 import { RateLimitService } from '../../common/utils/rate-limit.service';
 import { planGuestMerge } from '../../common/utils/guest-merge.util';
 import { PLAY_COUNT_SQL, keptGuestPlays } from '../../common/utils/plays.util';
+import { mailConfigured, sendPasswordResetMail } from '../../common/utils/mail.util';
+import { loadConfig } from '../../config/env';
 import { AuthUser } from '../../common/auth-user';
 import { ForgotDto, LoginDto, ResetDto } from './dto/auth.dto';
 
@@ -286,12 +288,32 @@ export class AuthService implements OnModuleInit {
     const value = (body.identifier || '').trim();
     if (!value) throw new BadRequestException('Please enter email or mobile number.');
     if (this.rates.check(ip, 'ForgotPasswordAttempt', 3, 10)) throw new BadRequestException('Too many password reset requests from this IP. Please try again in 10 minutes.');
-    const user = await this.db.one<{ userid: number }>(`SELECT userid FROM public."Users" WHERE email = $1 OR mobile = $1 LIMIT 1`, [value]);
-    const customer = user ? null : await this.db.one<{ customerid: number }>(`SELECT customerid FROM public."Customers" WHERE email = $1 OR mobile = $1 LIMIT 1`, [value]);
+    const user = await this.db.one<{ userid: number; email: string | null }>(`SELECT userid, email FROM public."Users" WHERE email = $1 OR mobile = $1 LIMIT 1`, [value]);
+    const customer = user
+      ? null
+      : await this.db.one<{ customerid: number; email: string | null }>(`SELECT customerid, email FROM public."Customers" WHERE email = $1 OR mobile = $1 LIMIT 1`, [value]);
     if (!user && !customer) throw new BadRequestException('We could not find any account matching that email or mobile.');
     const token = randomBytes(16).toString('hex');
     await this.db.query(`INSERT INTO public."PasswordResets" (token, userid, customerid, expires) VALUES ($1,$2,$3,$4)`, [token, user?.userid ?? null, customer?.customerid ?? null, new Date(Date.now() + 60 * 60 * 1000)]);
-    return { message: 'Reset token generated. In demo mode, use the link below.', resetPath: `/reset-password?token=${token}` };
+    const resetPath = `/reset-password?token=${token}`;
+
+    if (!mailConfigured()) {
+      return { message: 'Reset token generated. In demo mode, use the link below.', resetPath };
+    }
+
+    const email = (user?.email || customer?.email || '').trim().toLowerCase();
+    if (!email || !isValidEmail(email)) {
+      throw new BadRequestException('This account has no email address on file. Please contact support to reset your password.');
+    }
+
+    const { publicWebUrl } = loadConfig();
+    try {
+      await sendPasswordResetMail({ to: email, resetUrl: `${publicWebUrl}${resetPath}` });
+    } catch (error) {
+      console.error('Password reset email failed.', error);
+      throw new BadRequestException('We could not send the reset email right now. Please try again shortly.');
+    }
+    return { message: 'A password reset link has been sent to the email on file. Check your inbox and spam folder.' };
   }
 
   async inspectReset(token: string) {

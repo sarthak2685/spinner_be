@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS public."BusinessTypes" (
   categoryterm VARCHAR(50) NOT NULL DEFAULT 'Category',
   itemterm VARCHAR(50) NOT NULL DEFAULT 'Item',
   stationlabel VARCHAR(100) NOT NULL DEFAULT 'Table / Room No.',
-  stationplaceholder VARCHAR(150) NOT NULL DEFAULT 'e.g., Table 4',
+  stationplaceholder VARCHAR(150) NOT NULL DEFAULT '',
   actionbuttontext VARCHAR(50) NOT NULL DEFAULT 'Place Order',
   isactive BOOLEAN NOT NULL DEFAULT true,
   displayorder INT NOT NULL DEFAULT 0,
@@ -501,12 +501,20 @@ SELECT 'India' WHERE NOT EXISTS (SELECT 1 FROM public."Countries" WHERE countryn
 INSERT INTO public."BusinessTypes"
 (typename, typecode, hubtitle, hubsubtitle, hubicon, hubbadge, catalogtitle, categoryterm, itemterm, stationlabel, stationplaceholder, actionbuttontext, isactive, displayorder)
 VALUES
-('Restaurant / Cafe', 'RESTAURANT', 'ONLINE MENU', 'View Menu • Order Food', '🍽', 'Digital Order', 'Online Menu', 'Menu Category', 'Dish / Drink', 'Table / Room No.', 'e.g., Table 4, Room 201', 'Place Food Order', true, 1),
-('Salon, Spa & Beauty', 'SALON', 'SERVICE RATE CARD', 'View Services • Rate Card', '💇', 'Rate Card', 'Service Rate Card', 'Service Category', 'Treatment / Service', 'Chair / Seat No.', 'e.g., Chair 2', 'Request Service', true, 2),
-('Gym & Fitness Center', 'GYM', 'PLANS & SESSIONS', 'Membership Plans • Training', '🏋️', 'Plans & Passes', 'Fitness Plans & Sessions', 'Plan Category', 'Plan / Membership', 'Slot / Batch / Trainer', 'e.g., Morning Batch', 'Join / Inquire', true, 3),
-('Clinic & Healthcare', 'CLINIC', 'SERVICES & TREATMENTS', 'Treatments • Consultations', '🩺', 'Healthcare', 'Services & Consultations', 'Department', 'Treatment / Consultation', 'Cabin / Patient ID', 'e.g., Cabin 3', 'Book Appointment', true, 4),
-('Retail & Boutique', 'RETAIL', 'PRODUCT CATALOG', 'Browse Products • Shop', '🛍', 'Product Catalog', 'Product Catalog', 'Product Category', 'Product / Item', 'Counter / Pickup Spot', 'e.g., Counter 1', 'Place Order', true, 5)
+('Restaurant / Cafe', 'RESTAURANT', 'ONLINE MENU', 'View Menu • Order Food', '🍽', 'Digital Order', 'Online Menu', 'Menu Category', 'Dish / Drink', 'Table / Room No.', '', 'Place Food Order', true, 1),
+('Salon, Spa & Beauty', 'SALON', 'SERVICE RATE CARD', 'View Services • Rate Card', '💇', 'Rate Card', 'Service Rate Card', 'Service Category', 'Treatment / Service', 'Chair / Seat No.', '', 'Request Service', true, 2),
+('Gym & Fitness Center', 'GYM', 'PLANS & SESSIONS', 'Membership Plans • Training', '🏋️', 'Plans & Passes', 'Fitness Plans & Sessions', 'Plan Category', 'Plan / Membership', 'Slot / Batch / Trainer', '', 'Join / Inquire', true, 3),
+('Clinic & Healthcare', 'CLINIC', 'SERVICES & TREATMENTS', 'Treatments • Consultations', '🩺', 'Healthcare', 'Services & Consultations', 'Department', 'Treatment / Consultation', 'Cabin / Patient ID', '', 'Book Appointment', true, 4),
+('Retail & Boutique', 'RETAIL', 'PRODUCT CATALOG', 'Browse Products • Shop', '🛍', 'Product Catalog', 'Product Catalog', 'Product Category', 'Product / Item', 'Counter / Pickup Spot', '', 'Place Order', true, 5)
 ON CONFLICT (typename) DO NOTHING;
+
+UPDATE public."BusinessTypes"
+SET stationplaceholder = ''
+WHERE stationplaceholder ~* '(e\.g\.|table\s*\d|room\s*\d|chair\s*\d|cabin\s*\d|counter\s*\d)';
+
+UPDATE public."BusinessExperienceSettings"
+SET stationplaceholder = ''
+WHERE stationplaceholder ~* '(e\.g\.|table\s*\d|room\s*\d|chair\s*\d|cabin\s*\d|counter\s*\d|,?\s*or\s*0)';
 
 INSERT INTO public."States" (countryid, statename)
 SELECT c.countryid, s.name
