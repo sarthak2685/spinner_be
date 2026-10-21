@@ -47,12 +47,19 @@ export class BusinessService {
     if (!String(input.address || '').trim() || !Number(input.countryId) || !Number(input.stateId)) throw new BadRequestException('Address, country, and state are required.');
     await this.db.query(`ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS wifiname VARCHAR(120)`);
     await this.db.query(`ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS wifipassword VARCHAR(120)`);
+    await this.db.query(`ALTER TABLE public."Businesses" ALTER COLUMN facebookurl TYPE TEXT`);
+    await this.db.query(`ALTER TABLE public."Businesses" ALTER COLUMN instagramurl TYPE TEXT`);
+    await this.db.query(`ALTER TABLE public."Businesses" ALTER COLUMN twitterurl TYPE TEXT`);
+    await this.db.query(`ALTER TABLE public."Businesses" ALTER COLUMN youtubeurl TYPE TEXT`);
+    await this.db.query(`ALTER TABLE public."Businesses" ALTER COLUMN website TYPE TEXT`);
+    await this.db.query(`ALTER TABLE public."Businesses" ALTER COLUMN googlemapurl TYPE TEXT`);
+    await this.db.query(`ALTER TABLE public."Businesses" ALTER COLUMN googlereviewurl TYPE TEXT`);
     const logoPath = logo ? await saveUpload(logo, 'logos') : null;
     const bannerPath = banner ? await saveUpload(banner, 'banners') : null;
     await this.db.query(
       `UPDATE public."Businesses" SET businessname=$1, phone=$2, email=$3, address=$4, tagline=$5, description=$6,
         facebookurl=$7, instagramurl=$8, wifiname=$9, wifipassword=$10, twitterurl=$11, youtubeurl=$12, whatsappnumber=$13, website=$14,
-        supportemail=$15, themecolor=$16, countryid=$17, stateid=$18, districtid=$19, cityid=$20, pincode=$21,
+        supportemail=$15, themecolor=COALESCE($16, themecolor), countryid=$17, stateid=$18, districtid=$19, cityid=$20, pincode=$21,
         latitude=$22, longitude=$23, googlemapurl=$24, googlereviewurl=$25, businesstypeid=COALESCE($26, businesstypeid),
         logoimagepath=COALESCE($27, logoimagepath), bannerimagepath=COALESCE($28, bannerimagepath) WHERE businessid=$29`,
       [input.businessName, input.phone, input.email, input.address, input.tagline || null, input.description || null,
@@ -255,17 +262,27 @@ export class BusinessService {
     const params: unknown[] = [];
     const directory = isDirectorySearch(query) || !customerId;
     let scope: 'visited' | 'directory' = 'directory';
+    const nearLat = Number(query.lat);
+    const nearLng = Number(query.lng);
+    const nearMode = query.near === '1' && Number.isFinite(nearLat) && Number.isFinite(nearLng);
+    const hasCoords = (alias: string) =>
+      `${alias}.latitude ~ '^-?[0-9]+(\\.[0-9]+)?$' AND ${alias}.longitude ~ '^-?[0-9]+(\\.[0-9]+)?$'`;
+    const distKm = (alias: string) =>
+      `(6371 * acos(LEAST(1::float8, GREATEST(-1::float8,
+        cos(radians(${nearLat})) * cos(radians(${alias}.latitude::float8)) * cos(radians(${alias}.longitude::float8) - radians(${nearLng}))
+        + sin(radians(${nearLat})) * sin(radians(${alias}.latitude::float8))
+      ))))`;
     let sql = `SELECT b.businessid, b.businessname, b.businesstype, b.logoimagepath, b.bannerimagepath, b.businesstoken, b.publicslug, b.address,
       COALESCE(c.cityname, 'Unknown') as cityname, COALESCE(s.statename, 'Unknown') as statename,
       (SELECT string_agg(DISTINCT gc.gamecode, ', ') FROM public."GameConfigurations" gc WHERE gc.businessid = b.businessid AND gc.isactive = true) as active_games,
       (SELECT COUNT(1) FROM public."Rewards" r WHERE r.businessid = b.businessid AND r.isactive = true) as active_offers
-      ${query.near === '1' && Number.isFinite(Number(query.lat)) && Number.isFinite(Number(query.lng)) ? `,
-      CASE WHEN b.latitude ~ '^-?[0-9]+(\\.[0-9]+)?$' AND b.longitude ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN
-        round((6371 * acos(LEAST(1::float8, GREATEST(-1::float8,
-          cos(radians(${Number(query.lat)})) * cos(radians(b.latitude::float8)) * cos(radians(b.longitude::float8) - radians(${Number(query.lng)}))
-          + sin(radians(${Number(query.lat)})) * sin(radians(b.latitude::float8))
-        ))))::numeric, 1)
-      END as distancekm` : ', NULL::numeric as distancekm'}
+      ${nearMode ? `,
+      CASE WHEN ${hasCoords('b')} THEN round((${distKm('b')})::numeric, 1) END as distancekm,
+      CASE
+        WHEN ${hasCoords('b')} AND ${distKm('b')} <= 30 THEN false
+        WHEN b.cityid IS NOT NULL THEN true
+        ELSE false
+      END as samecity` : ', NULL::numeric as distancekm, false as samecity'}
       FROM public."Businesses" b
       LEFT JOIN public."States" s ON b.stateid = s.stateid
       LEFT JOIN public."Cities" c ON b.cityid = c.cityid
@@ -292,14 +309,23 @@ export class BusinessService {
     if (Number(query.districtId)) add('AND b.districtid = ?', Number(query.districtId));
     if (Number(query.cityId)) add('AND b.cityid = ?', Number(query.cityId));
     if (query.game && query.game !== 'All') add('AND EXISTS(SELECT 1 FROM public."GameConfigurations" gc WHERE gc.businessid = b.businessid AND gc.isactive = true AND gc.gamecode = ?)', query.game);
-    if (query.near === '1' && Number.isFinite(Number(query.lat)) && Number.isFinite(Number(query.lng))) {
-      sql += ` AND b.latitude ~ '^-?[0-9]+(\\.[0-9]+)?$' AND b.longitude ~ '^-?[0-9]+(\\.[0-9]+)?$'
-        AND (6371 * acos(LEAST(1::float8, GREATEST(-1::float8,
-          cos(radians(${Number(query.lat)})) * cos(radians(b.latitude::float8)) * cos(radians(b.longitude::float8) - radians(${Number(query.lng)}))
-          + sin(radians(${Number(query.lat)})) * sin(radians(b.latitude::float8))
-        )))) <= 30`;
+    if (nearMode) {
+      // Within 30 km (needs coords) OR same city as any mapped shop within 50 km (covers new shops without lat/lng).
+      sql += ` AND (
+        (${hasCoords('b')} AND ${distKm('b')} <= 30)
+        OR (
+          b.cityid IS NOT NULL AND b.cityid IN (
+            SELECT DISTINCT nb.cityid
+            FROM public."Businesses" nb
+            WHERE nb.isactive = true
+              AND nb.cityid IS NOT NULL
+              AND ${hasCoords('nb')}
+              AND ${distKm('nb')} <= 50
+          )
+        )
+      )`;
     }
-    sql += query.near === '1' ? ' ORDER BY distancekm NULLS LAST, b.businessname' : ' ORDER BY b.businessname';
+    sql += nearMode ? ' ORDER BY distancekm NULLS LAST, b.businessname' : ' ORDER BY b.businessname';
     const categories = await this.db.many(`SELECT DISTINCT businesstype FROM public."Businesses" WHERE businesstype IS NOT NULL AND businesstype <> '' AND isactive = true ORDER BY businesstype`);
     return { businesses: await this.db.many(sql, params), categories, scope };
   }

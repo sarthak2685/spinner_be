@@ -19,7 +19,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new RequestIdInterceptor());
   app.useGlobalPipes(new TrimPipe());
   app.enableCors({
-    origin: [config.webOrigin, HOSTED_WEB_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: [config.webOrigin, HOSTED_WEB_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174'],
     credentials: true,
   });
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });

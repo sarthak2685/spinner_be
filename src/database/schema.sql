@@ -58,15 +58,15 @@ CREATE TABLE IF NOT EXISTS public."Businesses" (
   bannerimagepath TEXT,
   tagline VARCHAR(250),
   description TEXT,
-  facebookurl VARCHAR(500),
-  instagramurl VARCHAR(500),
-  linkedinurl VARCHAR(500),
+  facebookurl TEXT,
+  instagramurl TEXT,
+  linkedinurl TEXT,
   wifiname VARCHAR(120),
   wifipassword VARCHAR(120),
-  twitterurl VARCHAR(500),
-  youtubeurl VARCHAR(500),
+  twitterurl TEXT,
+  youtubeurl TEXT,
   whatsappnumber VARCHAR(20),
-  website VARCHAR(200),
+  website TEXT,
   supportemail VARCHAR(100),
   themecolor VARCHAR(50),
   countryid INTEGER,
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS public."Businesses" (
   latitude VARCHAR(50),
   longitude VARCHAR(50),
   googlemapurl TEXT,
-  googlereviewurl VARCHAR(500)
+  googlereviewurl TEXT
 );
 
 CREATE TABLE IF NOT EXISTS public."Customers" (
@@ -419,15 +419,15 @@ ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS logoimagepath TEXT;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS bannerimagepath TEXT;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS tagline VARCHAR(250);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS description TEXT;
-ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS facebookurl VARCHAR(500);
-ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS instagramurl VARCHAR(500);
-ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS linkedinurl VARCHAR(500);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS facebookurl TEXT;
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS instagramurl TEXT;
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS linkedinurl TEXT;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS wifiname VARCHAR(120);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS wifipassword VARCHAR(120);
-ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS twitterurl VARCHAR(500);
-ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS youtubeurl VARCHAR(500);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS twitterurl TEXT;
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS youtubeurl TEXT;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS whatsappnumber VARCHAR(20);
-ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS website VARCHAR(200);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS website TEXT;
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS supportemail VARCHAR(100);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS themecolor VARCHAR(50);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS countryid INTEGER;
@@ -438,7 +438,15 @@ ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS pincode VARCHAR(20);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS latitude VARCHAR(50);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS longitude VARCHAR(50);
 ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS googlemapurl TEXT;
-ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS googlereviewurl VARCHAR(500);
+ALTER TABLE public."Businesses" ADD COLUMN IF NOT EXISTS googlereviewurl TEXT;
+ALTER TABLE public."Businesses" ALTER COLUMN facebookurl TYPE TEXT;
+ALTER TABLE public."Businesses" ALTER COLUMN instagramurl TYPE TEXT;
+ALTER TABLE public."Businesses" ALTER COLUMN linkedinurl TYPE TEXT;
+ALTER TABLE public."Businesses" ALTER COLUMN twitterurl TYPE TEXT;
+ALTER TABLE public."Businesses" ALTER COLUMN youtubeurl TYPE TEXT;
+ALTER TABLE public."Businesses" ALTER COLUMN website TYPE TEXT;
+ALTER TABLE public."Businesses" ALTER COLUMN googlemapurl TYPE TEXT;
+ALTER TABLE public."Businesses" ALTER COLUMN googlereviewurl TYPE TEXT;
 ALTER TABLE public."QRCodes" ADD COLUMN IF NOT EXISTS code TEXT;
 ALTER TABLE public."QRCodes" ADD COLUMN IF NOT EXISTS imagepath TEXT;
 ALTER TABLE public."QRCodes" ADD COLUMN IF NOT EXISTS isactive BOOLEAN DEFAULT true;
