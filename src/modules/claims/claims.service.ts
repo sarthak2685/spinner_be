@@ -51,18 +51,31 @@ export class ClaimsService {
     ]);
     return pageResult(rows, Number(totalRow || 0), page, pageSize);
   }
-  async decide(businessId: number, claimId: number, userId: number, action: 'approve' | 'reject', reason?: string) {
+  async decide(businessId: number, claimId: number, userId: number, action: 'approve' | 'reject', reason?: string, coinsInput?: string | number) {
     const result = await this.db.tx(async (client) => {
       const claim = await client.query(`SELECT status, coins, customerid, purchaseamount FROM public."PurchaseClaims" WHERE purchaseclaimid=$1 AND businessid=$2 FOR UPDATE`, [claimId, businessId]);
       const row = claim.rows[0];
       if (!row) throw new NotFoundException('Purchase claim not found.');
       if (row.status !== 'Pending') throw new BadRequestException('This claim has already been approved or rejected.');
       if (action === 'approve') {
-        await client.query(`UPDATE public."PurchaseClaims" SET status='Approved', approveddate=CURRENT_TIMESTAMP, approvedbyuserid=$1 WHERE purchaseclaimid=$2`, [userId, claimId]);
-        await client.query(`UPDATE public."Customers" SET totalcoins = totalcoins + $1 WHERE customerid=$2`, [row.coins, row.customerid]);
-        await client.query(`INSERT INTO public."WalletTransactions" (customerid, businessid, coins, transactiontype, description, expirydate, coinsused, isexpired, expiredcoins, purchaseclaimid) VALUES ($1,$2,$3,'Earn',$4,CURRENT_TIMESTAMP + INTERVAL '30 days',0,false,0,$5)`, [row.customerid, businessId, row.coins, `Earned ${row.coins} coins from purchase of ₹${row.purchaseamount}`, claimId]);
+        const requested = coinsInput === undefined || coinsInput === null || coinsInput === '' ? Number(row.coins) : Number(coinsInput);
+        const coins = Math.floor(requested);
+        if (!Number.isFinite(coins) || coins < 0) throw new BadRequestException('Enter a valid coin amount (0 or more).');
+        await client.query(
+          `UPDATE public."PurchaseClaims" SET status='Approved', coins=$1, approveddate=CURRENT_TIMESTAMP, approvedbyuserid=$2 WHERE purchaseclaimid=$3`,
+          [coins, userId, claimId],
+        );
+        if (coins > 0) {
+          await client.query(`UPDATE public."Customers" SET totalcoins = totalcoins + $1 WHERE customerid=$2`, [coins, row.customerid]);
+          await client.query(
+            `INSERT INTO public."WalletTransactions" (customerid, businessid, coins, transactiontype, description, expirydate, coinsused, isexpired, expiredcoins, purchaseclaimid) VALUES ($1,$2,$3,'Earn',$4,CURRENT_TIMESTAMP + INTERVAL '30 days',0,false,0,$5)`,
+            [row.customerid, businessId, coins, `Earned ${coins} coins from purchase of ₹${row.purchaseamount}`, claimId],
+          );
+        }
         const title = 'Purchase claim approved';
-        const message = `Your bill of ₹${row.purchaseamount} was approved. ${row.coins} coins are in your wallet.`;
+        const message = coins > 0
+          ? `Your bill of ₹${row.purchaseamount} was approved. ${coins} coins are in your wallet.`
+          : `Your bill of ₹${row.purchaseamount} was approved.`;
         await client.query(`INSERT INTO public."CustomerNotifications" (customerid, businessid, title, message, notificationtype) VALUES ($1,$2,$3,$4,'PurchaseApproval')`, [row.customerid, businessId, title, message]);
         return { ok: true, notify: { customerId: Number(row.customerid), title, message } };
       }

@@ -23,7 +23,7 @@ export class PublicClaimsController {
 export class ClaimsController {
   constructor(private readonly claims: ClaimsService) {}
   @Get('business/claims') @Roles('BusinessAdmin') business(@CurrentUser() user: AuthUser, @Query() query: Record<string, string>) { return this.claims.forBusiness(user.businessId!, query); }
-  @Post('business/claims/:id') @Roles('BusinessAdmin') decide(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() body: DecideClaimDto) { return this.claims.decide(user.businessId!, id, user.id, body.action, body.reason); }
+  @Post('business/claims/:id') @Roles('BusinessAdmin') decide(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() body: DecideClaimDto) { return this.claims.decide(user.businessId!, id, user.id, body.action, body.reason, body.coins); }
   @Get('customer/claims') @Roles('Customer') mine(@CurrentUser() user: AuthUser, @Query() query: Record<string, string>) { return this.claims.mine(user.id, query); }
   @Post('customer/claims') @Roles('Customer') @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } }))
   create(@CurrentUser() user: AuthUser, @Body() body: ClaimDto, @UploadedFile() file?: Express.Multer.File) { return this.claims.create(user.id, body, file); }
