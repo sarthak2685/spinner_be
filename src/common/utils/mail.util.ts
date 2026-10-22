@@ -56,7 +56,7 @@ export async function sendDemoMail(input: DemoMail) {
 export async function sendPasswordResetMail(input: ResetMail) {
   if (!mailConfigured()) return false;
   const text = [
-    'We received a request to reset your Spineer password.',
+    'We received a request to reset your RepeatMate password.',
     '',
     'Open this link to choose a new password (valid for 1 hour):',
     input.resetUrl,
@@ -64,14 +64,14 @@ export async function sendPasswordResetMail(input: ResetMail) {
     'If you did not request this, you can ignore this email.',
   ].join('\n');
   const html = `
-    <p>We received a request to reset your Spineer password.</p>
+    <p>We received a request to reset your RepeatMate password.</p>
     <p><a href="${input.resetUrl}">Reset your password</a></p>
     <p>This link expires in 1 hour. If you did not request this, you can ignore this email.</p>
   `;
   await createTransport().sendMail({
     from: fromAddress(),
     to: input.to,
-    subject: 'Reset your Spineer password',
+    subject: 'Reset your RepeatMate password',
     text,
     html,
   });
