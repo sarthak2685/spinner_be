@@ -296,7 +296,19 @@ export class BusinessService {
       scope = 'visited';
     }
     const add = (clause: string, value: unknown) => { params.push(value); sql += ` ${clause.replace('?', `$${params.length}`)}`; };
-    if (query.search) add('AND LOWER(b.businessname) LIKE ?', `%${query.search.toLowerCase()}%`);
+    if (query.search) {
+      const like = `%${query.search.toLowerCase()}%`;
+      params.push(like);
+      const index = params.length;
+      sql += ` AND (
+        LOWER(COALESCE(b.businessname, '')) LIKE $${index}
+        OR LOWER(COALESCE(b.businesstype, '')) LIKE $${index}
+        OR LOWER(COALESCE(b.address, '')) LIKE $${index}
+        OR LOWER(COALESCE(c.cityname, '')) LIKE $${index}
+        OR LOWER(COALESCE(s.statename, '')) LIKE $${index}
+        OR LOWER(COALESCE(d.districtname, '')) LIKE $${index}
+      )`;
+    }
     if (query.place) {
       const like = `%${query.place.toLowerCase()}%`;
       params.push(like);

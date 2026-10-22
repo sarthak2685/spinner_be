@@ -82,7 +82,10 @@ export class ClaimsService {
       await client.query(`UPDATE public."PurchaseClaims" SET status='Rejected', approveddate=CURRENT_TIMESTAMP, approvedbyuserid=$1, rejectionreason=$2 WHERE purchaseclaimid=$3`, [userId, reason || null, claimId]);
       return { ok: true, notify: null as null };
     });
-    if (result.notify) await this.notes.alertCustomers([result.notify.customerId], result.notify.title, result.notify.message, '/customer/wallet', `claim-${claimId}`);
+    if (result.notify) {
+      const url = await this.notes.shopDeepLink(businessId, 'wallet');
+      await this.notes.alertCustomers([result.notify.customerId], result.notify.title, result.notify.message, url, `claim-${claimId}`);
+    }
     return { ok: true };
   }
   async create(customerId: number, input: ClaimDto, file?: Express.Multer.File) {

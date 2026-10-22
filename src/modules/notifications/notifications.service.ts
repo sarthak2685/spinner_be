@@ -53,8 +53,27 @@ export class NotificationsService {
 
     const ids = recipients.map((row) => Number(row.customerid)).filter((id) => Number.isFinite(id));
     const shop = await this.db.one<{ businessname: string }>(`SELECT businessname FROM public."Businesses" WHERE businessid=$1`, [businessId]);
-    const delivered = await this.alertCustomers(ids, body.title, shop?.businessname ? `${shop.businessname}: ${body.message}` : body.message, '/customer/notifications', `offer-${notificationId}`);
+    const url = await this.shopDeepLink(businessId, 'offers');
+    const delivered = await this.alertCustomers(ids, body.title, shop?.businessname ? `${shop.businessname}: ${body.message}` : body.message, url, `offer-${notificationId}`);
     return { notificationId, recipientCount: recipients.length, browserPush: delivered };
+  }
+
+  /** Deep link into the right shop page for push / inbox clicks. */
+  async shopDeepLink(businessId: number, kind: 'play' | 'menu' | 'offers' | 'wallet' = 'play') {
+    const shop = await this.db.one<{ publicslug: string | null; businesstoken: string | null }>(
+      `SELECT publicslug, businesstoken FROM public."Businesses" WHERE businessid=$1`,
+      [businessId],
+    );
+    const token = String(shop?.publicslug || shop?.businesstoken || '').trim();
+    if (!token) {
+      if (kind === 'wallet') return '/customer/wallet';
+      if (kind === 'menu') return '/customer/my-orders';
+      return '/customer/notifications';
+    }
+    if (kind === 'offers') return `/play/${token}#offers`;
+    if (kind === 'menu') return `/menu/${token}`;
+    if (kind === 'wallet') return `/play/${token}`;
+    return `/play/${token}`;
   }
 
   alertCustomers(customerIds: number[], title: string, message: string, url = '/customer/notifications', tag?: string) {
@@ -94,7 +113,8 @@ export class NotificationsService {
 
   inbox(customerId: number, filter?: string) {
     const params: unknown[] = [customerId];
-    let sql = `SELECT n.customernotificationid, n.title, n.message, n.notificationtype, n.isread, n.createddate, n.businessid, b.businessname
+    let sql = `SELECT n.customernotificationid, n.title, n.message, n.notificationtype, n.isread, n.createddate, n.businessid,
+      b.businessname, b.publicslug, b.businesstoken
       FROM public."CustomerNotifications" n
       LEFT JOIN public."Businesses" b ON b.businessid = n.businessid
       WHERE n.customerid=$1 AND n.isdeleted=false`;

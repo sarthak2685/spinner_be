@@ -81,7 +81,8 @@ export class OrdersService {
     const title = `Order update: ${order.ordernumber}`;
     const message = `Your order at ${order.businessname} is now ${status}.`;
     await this.db.query(`INSERT INTO public."CustomerNotifications" (customerid, businessid, title, message, notificationtype, isread, createddate) VALUES ($1,$2,$3,$4,'OrderUpdate',false,CURRENT_TIMESTAMP)`, [order.customerid, businessId, title, message]);
-    await this.notes.alertCustomers([order.customerid], title, message, '/customer/my-orders', `order-${orderId}-${status}`);
+    const url = await this.notes.shopDeepLink(businessId, 'menu');
+    await this.notes.alertCustomers([order.customerid], title, message, url, `order-${orderId}-${status}`);
     return { ok: true, status, message: `Order ${order.ordernumber} marked as '${status}'.` };
   }
 
@@ -171,7 +172,8 @@ export class OrdersService {
       await client.query(`INSERT INTO public."CustomerNotifications" (customerid, businessid, title, message, notificationtype, isread, createddate) VALUES ($1,$2,$3,$4,'OrderUpdate',false,CURRENT_TIMESTAMP)`, [customerId, business.businessid, title, message]);
       return { number, title, message };
     });
-    await this.notes.alertCustomers([customerId], orderNumber.title, orderNumber.message, '/customer/my-orders', `order-${orderNumber.number}`);
+    const url = await this.notes.shopDeepLink(business.businessid, 'menu');
+    await this.notes.alertCustomers([customerId], orderNumber.title, orderNumber.message, url, `order-${orderNumber.number}`);
     const serviceLabel = fulfillment === 'DineIn' ? 'Dine in' : fulfillment === 'Delivery' ? 'Delivery' : 'Pickup';
     const linesText = lines.map((line, index) => `${index + 1}. *${line.name}*\n   Qty: ${line.qty} × ₹${line.price.toFixed(2)} = ₹${line.subtotal.toFixed(2)}`).join('\n');
     const message = [

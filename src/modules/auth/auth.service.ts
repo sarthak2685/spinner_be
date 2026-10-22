@@ -84,14 +84,20 @@ export class AuthService implements OnModuleInit {
     const mobile = normalizeMobile(process.env.SUPERADMIN_MOBILE || '9876543210').slice(-10);
     const password = process.env.SUPERADMIN_PASSWORD || 'Admin@123';
     const name = process.env.SUPERADMIN_NAME || 'Super Admin';
+    const hash = hashPassword(password);
     const existing = await this.db.one<{ userid: number }>(`SELECT userid FROM public."Users" WHERE role = 'SuperAdmin' OR mobile = $1 LIMIT 1`, [mobile]);
     if (existing) {
+      // Keep bootstrap creds in sync with env (so VPS / Render can share the same password).
+      await this.db.query(
+        `UPDATE public."Users" SET fullname=$1, mobile=$2, passwordhash=$3, role='SuperAdmin', failedloginattempts=0, lockoutend=NULL WHERE userid=$4`,
+        [name, mobile, hash, existing.userid],
+      );
       console.log(`Super admin is ready. Sign in with mobile ${mobile}.`);
       return;
     }
     await this.db.query(
       `INSERT INTO public."Users" (fullname, mobile, email, passwordhash, role, failedloginattempts) VALUES ($1,$2,$3,$4,'SuperAdmin',0)`,
-      [name, mobile, 'admin@rewardspinner.local', hashPassword(password)],
+      [name, mobile, 'admin@rewardspinner.local', hash],
     );
     console.log(`Created super admin. Mobile ${mobile}. Password ${password}.`);
   }

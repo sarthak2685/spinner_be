@@ -148,6 +148,7 @@ export class RewardsService {
       `INSERT INTO public."CustomerNotifications" (customerid, businessid, title, message, notificationtype, isread, createddate) VALUES ($1,$2,$3,$4,'RewardUpdate',false,CURRENT_TIMESTAMP)`,
       [customerId, businessId, title, message],
     );
-    await this.notes.alertCustomers([customerId], title, message, '/customer/offers', tag);
+    const url = await this.notes.shopDeepLink(businessId, 'offers');
+    await this.notes.alertCustomers([customerId], title, message, url, tag);
   }
 }
