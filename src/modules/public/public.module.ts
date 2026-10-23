@@ -121,11 +121,27 @@ export class PublicService {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
         body: JSON.stringify({
           model: 'llama-3.1-8b-instant',
-          temperature: 0.7,
+          temperature: 0.85,
           response_format: { type: 'json_object' },
           messages: [
-            { role: 'system', content: 'Return only JSON with a reviews array of 3 short strings.' },
-            { role: 'user', content: `Write 3 distinct short Google reviews for "${businessName}". Use these words naturally: ${keywords.join(', ')}. ${customerName ? `The guest is ${customerName}.` : 'Do not invent a guest name.'} Sound like a real customer.` },
+            {
+              role: 'system',
+              content:
+                'Return only JSON: {"reviews":["...","...","..."]}. Each string is a short Google review (1–3 sentences). No markdown.',
+            },
+            {
+              role: 'user',
+              content: [
+                `Write 3 short Google reviews for "${businessName}".`,
+                `Keywords: ${keywords.join(', ') || 'great visit'}.`,
+                keywords.length > 1
+                  ? 'Each review must focus mainly on a different keyword from that list.'
+                  : 'All three must centre on that keyword but use different openings, details, and closings.',
+                'Do not reuse the same first five words across the three reviews.',
+                'Sound like a real customer. Include the business name. Do not invent guest names.',
+                customerName ? `The guest is ${customerName}.` : 'Do not invent a guest name.',
+              ].join(' '),
+            },
           ],
         }),
       });
