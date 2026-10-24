@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Injectable, Module, NotFoundException, Param, ParseIntPipe, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
+import type { QueryResultRow } from 'pg';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseService } from '../../database/database.module';
 import { loadConfig } from '../../config/env';
@@ -62,14 +63,21 @@ export class PublicService {
     return row as { businessid: number; businessname: string; tagline?: string; googlereviewurl?: string };
   }
 
-  async hub(token: string) {
+  async hub(token: string): Promise<{
+    business: { businessid: number; businessname: string; tagline?: string; googlereviewurl?: string };
+    settings: QueryResultRow | null;
+    type: QueryResultRow | null;
+    games: QueryResultRow[];
+    qr: QueryResultRow | null;
+    keywords: string[];
+  }> {
     await this.ensure();
     const business = await this.business(token);
     const [settings, type, games, qr] = await Promise.all([
-      this.db.one(`SELECT * FROM public."BusinessExperienceSettings" WHERE businessid=$1`, [business.businessid]),
-      this.db.one(`SELECT bt.* FROM public."BusinessTypes" bt JOIN public."Businesses" b ON b.businesstypeid=bt.businesstypeid WHERE b.businessid=$1`, [business.businessid]),
-      this.db.many(`SELECT gamecode, configurationname, isactive FROM public."GameConfigurations" WHERE businessid=$1 AND isactive=true`, [business.businessid]),
-      this.db.one(`SELECT qrcodetext, imagepath FROM public."QRCodes" WHERE businessid=$1 ORDER BY createddate DESC LIMIT 1`, [business.businessid]),
+      this.db.one<QueryResultRow>(`SELECT * FROM public."BusinessExperienceSettings" WHERE businessid=$1`, [business.businessid]),
+      this.db.one<QueryResultRow>(`SELECT bt.* FROM public."BusinessTypes" bt JOIN public."Businesses" b ON b.businesstypeid=bt.businesstypeid WHERE b.businessid=$1`, [business.businessid]),
+      this.db.many<QueryResultRow>(`SELECT gamecode, configurationname, isactive FROM public."GameConfigurations" WHERE businessid=$1 AND isactive=true`, [business.businessid]),
+      this.db.one<QueryResultRow>(`SELECT qrcodetext, imagepath FROM public."QRCodes" WHERE businessid=$1 ORDER BY createddate DESC LIMIT 1`, [business.businessid]),
     ]);
     const experience = (settings || {}) as { reviewkeywords?: string };
     const kind = type as { typename?: string; typecode?: string } | null;
@@ -80,15 +88,15 @@ export class PublicService {
 
   async catalog(token: string) {
     const hub = await this.hub(token);
-    const businessId = (hub.business as { businessid: number }).businessid;
-    const categories = await this.db.many(`SELECT * FROM public."MenuCategories" WHERE businessid=$1 AND isactive=true ORDER BY displayorder, categoryname`, [businessId]);
-    const items = await this.db.many<{ itemid: number }>(`SELECT * FROM public."MenuItems" WHERE businessid=$1 AND isactive=true AND isavailable=true ORDER BY displayorder, itemname`, [businessId]);
+    const businessId = hub.business.businessid;
+    const categories = await this.db.many<QueryResultRow>(`SELECT * FROM public."MenuCategories" WHERE businessid=$1 AND isactive=true ORDER BY displayorder, categoryname`, [businessId]);
+    const items = await this.db.many<QueryResultRow & { itemid: number }>(`SELECT * FROM public."MenuItems" WHERE businessid=$1 AND isactive=true AND isavailable=true ORDER BY displayorder, itemname`, [businessId]);
     const ids = items.map((item) => item.itemid);
-    const priced = [] as { itemid: number }[];
+    const priced = [] as Array<QueryResultRow & { itemid: number }>;
     const [options, addons, offers] = await Promise.all([
-      ids.length ? this.db.many<{ itemid: number }>(`SELECT optionid, itemid, optionname, price FROM public."MenuItemOptions" WHERE itemid = ANY($1::int[]) ORDER BY displayorder, optionid`, [ids]) : priced,
-      ids.length ? this.db.many<{ itemid: number }>(`SELECT addonid, itemid, addonname, price FROM public."MenuItemAddons" WHERE itemid = ANY($1::int[]) ORDER BY displayorder, addonid`, [ids]) : priced,
-      this.db.many(`SELECT rewardid, rewardname, description, coinsrequired, imagepath FROM public."Rewards" WHERE businessid=$1 AND isactive=true ORDER BY coinsrequired`, [businessId]),
+      ids.length ? this.db.many<QueryResultRow & { itemid: number }>(`SELECT optionid, itemid, optionname, price FROM public."MenuItemOptions" WHERE itemid = ANY($1::int[]) ORDER BY displayorder, optionid`, [ids]) : priced,
+      ids.length ? this.db.many<QueryResultRow & { itemid: number }>(`SELECT addonid, itemid, addonname, price FROM public."MenuItemAddons" WHERE itemid = ANY($1::int[]) ORDER BY displayorder, addonid`, [ids]) : priced,
+      this.db.many<QueryResultRow>(`SELECT rewardid, rewardname, description, coinsrequired, imagepath FROM public."Rewards" WHERE businessid=$1 AND isactive=true ORDER BY coinsrequired`, [businessId]),
     ]);
     return {
       ...hub,
@@ -120,7 +128,7 @@ export class PublicService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
         body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
+          model: 'openai/gpt-oss-20b',
           temperature: 0.85,
           response_format: { type: 'json_object' },
           messages: [
@@ -172,8 +180,8 @@ export class PublicService {
     return { ok: true };
   }
 
-  reviews(businessId: number) {
-    return this.ensure().then(() => this.db.many(`SELECT * FROM public."GuestReviews" WHERE businessid=$1 AND btrim(COALESCE(customername, '')) <> '' ORDER BY createddate DESC`, [businessId]));
+  reviews(businessId: number): Promise<QueryResultRow[]> {
+    return this.ensure().then(() => this.db.many<QueryResultRow>(`SELECT * FROM public."GuestReviews" WHERE businessid=$1 AND btrim(COALESCE(customername, '')) <> '' ORDER BY createddate DESC`, [businessId]));
   }
 
   async reviewsCsv(businessId: number) {
@@ -217,9 +225,9 @@ export class PublicService {
     return { ok: true, mailed };
   }
 
-  async demos() {
+  async demos(): Promise<QueryResultRow[]> {
     await this.ensureDemos();
-    return this.db.many(`SELECT * FROM public."DemoRequests" ORDER BY createddate DESC`);
+    return this.db.many<QueryResultRow>(`SELECT * FROM public."DemoRequests" ORDER BY createddate DESC`);
   }
 
   async stats() {
@@ -227,8 +235,8 @@ export class PublicService {
     return { businesses: Number(businesses) || 0 };
   }
 
-  feedback(businessId: number) {
-    return this.ensure().then(() => this.db.many(`SELECT * FROM public."GuestFeedback" WHERE businessid=$1 ORDER BY createddate DESC`, [businessId]));
+  feedback(businessId: number): Promise<QueryResultRow[]> {
+    return this.ensure().then(() => this.db.many<QueryResultRow>(`SELECT * FROM public."GuestFeedback" WHERE businessid=$1 ORDER BY createddate DESC`, [businessId]));
   }
 
   async feedbackStatus(businessId: number, id: number, status: string) {
