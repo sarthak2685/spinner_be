@@ -80,6 +80,43 @@ export class NotificationsService {
     return this.deliverBrowserPush(customerIds, title, message, url, tag);
   }
 
+  alertBusiness(businessId: number, title: string, message: string, url = '/business/menu/orders', tag?: string) {
+    return this.deliverBusinessPush(businessId, title, message, url, tag);
+  }
+
+  private async sendToTokens(
+    tokens: { deviceid: number; devicetoken: string }[],
+    table: 'CustomerDeviceTokens' | 'BusinessDeviceTokens',
+    title: string,
+    message: string,
+    url: string,
+    tag?: string,
+    highPriority = false,
+  ) {
+    let sent = 0;
+    const payload = JSON.stringify({ title, body: message, url, tag: tag || title });
+    const options = highPriority ? { TTL: 60, urgency: 'high' as const } : undefined;
+    for (const row of tokens) {
+      try {
+        const subscription = JSON.parse(row.devicetoken);
+        if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
+          await this.db.query(`UPDATE public."${table}" SET isactive=false WHERE deviceid=$1`, [row.deviceid]);
+          continue;
+        }
+        await webpush.sendNotification(subscription, payload, options);
+        sent += 1;
+      } catch (error: any) {
+        const status = error?.statusCode;
+        if (status === 404 || status === 410) {
+          await this.db.query(`UPDATE public."${table}" SET isactive=false WHERE deviceid=$1`, [row.deviceid]);
+        } else {
+          this.log.warn(`Push failed for ${table} device ${row.deviceid}: ${error?.message || error}`);
+        }
+      }
+    }
+    return { attempted: tokens.length, sent };
+  }
+
   private async deliverBrowserPush(customerIds: number[], title: string, message: string, url: string, tag?: string) {
     const ids = [...new Set(customerIds.map((id) => Number(id)).filter((id) => Number.isFinite(id)))];
     if (!this.pushReady || !ids.length) return { attempted: 0, sent: 0 };
@@ -88,27 +125,17 @@ export class NotificationsService {
       `SELECT deviceid, devicetoken FROM public."CustomerDeviceTokens" WHERE isactive=true AND customerid = ANY($1::int[])`,
       [ids],
     );
-    let sent = 0;
-    const payload = JSON.stringify({ title, body: message, url, tag: tag || title });
-    for (const row of tokens) {
-      try {
-        const subscription = JSON.parse(row.devicetoken);
-        if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
-          await this.db.query(`UPDATE public."CustomerDeviceTokens" SET isactive=false WHERE deviceid=$1`, [row.deviceid]);
-          continue;
-        }
-        await webpush.sendNotification(subscription, payload);
-        sent += 1;
-      } catch (error: any) {
-        const status = error?.statusCode;
-        if (status === 404 || status === 410) {
-          await this.db.query(`UPDATE public."CustomerDeviceTokens" SET isactive=false WHERE deviceid=$1`, [row.deviceid]);
-        } else {
-          this.log.warn(`Push failed for device ${row.deviceid}: ${error?.message || error}`);
-        }
-      }
-    }
-    return { attempted: tokens.length, sent };
+    return this.sendToTokens(tokens, 'CustomerDeviceTokens', title, message, url, tag);
+  }
+
+  private async deliverBusinessPush(businessId: number, title: string, message: string, url: string, tag?: string) {
+    if (!this.pushReady || !Number.isFinite(businessId)) return { attempted: 0, sent: 0 };
+    await this.ensureBusinessDeviceTable();
+    const tokens = await this.db.many<{ deviceid: number; devicetoken: string }>(
+      `SELECT deviceid, devicetoken FROM public."BusinessDeviceTokens" WHERE isactive=true AND businessid=$1`,
+      [businessId],
+    );
+    return this.sendToTokens(tokens, 'BusinessDeviceTokens', title, message, url, tag, true);
   }
 
   inbox(customerId: number, filter?: string) {
@@ -137,6 +164,19 @@ export class NotificationsService {
       )`);
   }
 
+  async ensureBusinessDeviceTable() {
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS public."BusinessDeviceTokens" (
+        deviceid SERIAL PRIMARY KEY,
+        userid INTEGER REFERENCES public."Users"(userid) ON DELETE CASCADE,
+        businessid INTEGER REFERENCES public."Businesses"(businessid) ON DELETE CASCADE,
+        devicetoken TEXT NOT NULL UNIQUE,
+        devicetype VARCHAR(50) NOT NULL DEFAULT 'Web',
+        createddate TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        isactive BOOLEAN DEFAULT true
+      )`);
+  }
+
   async push(customerId: number | null, token: string, action = 'subscribe') {
     await this.ensureDeviceTable();
     const raw = typeof token === 'string' ? token.trim() : '';
@@ -158,6 +198,31 @@ export class NotificationsService {
        VALUES ($1,$2,'Web',true)
        ON CONFLICT (devicetoken) DO UPDATE SET isactive=true, customerid=$1`,
       [customerId, stored],
+    );
+    return { ok: true };
+  }
+
+  async pushBusiness(userId: number, businessId: number, token: string, action = 'subscribe') {
+    await this.ensureBusinessDeviceTable();
+    const raw = typeof token === 'string' ? token.trim() : '';
+    if (!raw) throw new BadRequestException('Missing push subscription.');
+    if (action === 'unsubscribe') {
+      await this.db.query(`UPDATE public."BusinessDeviceTokens" SET isactive=false WHERE (devicetoken=$1 OR devicetoken LIKE $2) AND businessid=$3`, [raw, `%${raw.slice(0, 80)}%`, businessId]);
+      return { ok: true };
+    }
+    if (!userId || !businessId) throw new BadRequestException('Sign in as a shop owner to enable order alerts.');
+    let parsed: { endpoint?: string; keys?: { p256dh?: string; auth?: string } } | null = null;
+    try { parsed = JSON.parse(raw); } catch { parsed = null; }
+    if (!parsed?.endpoint || !parsed.keys?.p256dh || !parsed.keys?.auth) {
+      throw new BadRequestException('Turn order alerts on again from the store dashboard.');
+    }
+    const stored = JSON.stringify({ endpoint: parsed.endpoint, keys: { p256dh: parsed.keys.p256dh, auth: parsed.keys.auth } });
+    await this.db.query(`UPDATE public."BusinessDeviceTokens" SET isactive=false WHERE userid=$1 AND businessid=$2 AND devicetoken LIKE $3`, [userId, businessId, `${parsed.endpoint.slice(0, 80)}%`]);
+    await this.db.query(
+      `INSERT INTO public."BusinessDeviceTokens" (userid, businessid, devicetoken, devicetype, isactive)
+       VALUES ($1,$2,$3,'Web',true)
+       ON CONFLICT (devicetoken) DO UPDATE SET isactive=true, userid=$1, businessid=$2`,
+      [userId, businessId, stored],
     );
     return { ok: true };
   }

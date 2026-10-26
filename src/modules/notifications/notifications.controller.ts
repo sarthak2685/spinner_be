@@ -26,6 +26,10 @@ export class NotificationsController {
   subscribe(@CurrentUser() user: AuthUser, @Body() body: PushDto) {
     return this.notes.push(user.id, body.token, body.action || 'subscribe');
   }
+  @Post('business/push/subscribe') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('BusinessAdmin')
+  businessSubscribe(@CurrentUser() user: AuthUser, @Body() body: PushDto) {
+    return this.notes.pushBusiness(user.id, user.businessId!, body.token, body.action || 'subscribe');
+  }
   private user(req: Request): AuthUser | null {
     const header = req.headers.authorization;
     const token = (header?.startsWith('Bearer ') ? header.slice(7) : '') || req.cookies?.rs_access;

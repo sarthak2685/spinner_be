@@ -175,6 +175,13 @@ export class OrdersService {
     const url = await this.notes.shopDeepLink(business.businessid, 'menu');
     await this.notes.alertCustomers([customerId], orderNumber.title, orderNumber.message, url, `order-${orderNumber.number}`);
     const serviceLabel = fulfillment === 'DineIn' ? 'Dine in' : fulfillment === 'Delivery' ? 'Delivery' : 'Pickup';
+    await this.notes.alertBusiness(
+      business.businessid,
+      `New order: ${orderNumber.number}`,
+      `${serviceLabel} · ₹${total.toFixed(2)} · waiting at counter`,
+      '/business/menu/orders',
+      `owner-order-${orderNumber.number}`,
+    );
     const linesText = lines.map((line, index) => `${index + 1}. *${line.name}*\n   Qty: ${line.qty} × ₹${line.price.toFixed(2)} = ₹${line.subtotal.toFixed(2)}`).join('\n');
     const message = [
       `🛒 *New Order for ${business.businessname}*`,
