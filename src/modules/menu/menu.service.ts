@@ -28,15 +28,57 @@ export function parsePricedList(raw?: string) {
   }).filter((row) => row.name && row.price >= 0 && Number.isFinite(row.price));
 }
 
+function parseMoney(text?: string) {
+  const value = Number(String(text || '').replace(/[^\d.]/g, ''));
+  return Number.isFinite(value) ? value : 0;
+}
+
+export type MenuCsvRow = {
+  category: string;
+  itemName: string;
+  price: number;
+  halfPrice?: number;
+  fullPrice?: number;
+  description?: string;
+};
+
 export function parseMenuCsv(raw: string) {
   const lines = raw.replace(/^\uFEFF/, '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const rows: { category: string; itemName: string; price: number; description?: string }[] = [];
-  lines.forEach((line, index) => {
-    const [category, itemName, priceText, ...rest] = splitCsv(line);
-    if (index === 0 && /category/i.test(category) && /item|name/i.test(itemName || '')) return;
-    const price = Number(String(priceText || '').replace(/[^\d.]/g, ''));
-    rows.push({ category: category || '', itemName: itemName || '', price, description: rest.join(', ').trim() || undefined });
-  });
+  if (!lines.length) return [] as MenuCsvRow[];
+
+  const first = splitCsv(lines[0]);
+  const hasHeader = /category/i.test(first[0] || '') && /item|name/i.test(first[1] || '');
+  const headers = hasHeader ? first.map((cell) => cell.toLowerCase()) : [];
+  const col = {
+    category: hasHeader ? headers.findIndex((h) => /category/.test(h)) : 0,
+    item: hasHeader ? headers.findIndex((h) => /item|name/.test(h)) : 1,
+    price: hasHeader ? headers.findIndex((h) => /price/.test(h) && !/half|full/.test(h)) : 2,
+    half: hasHeader ? headers.findIndex((h) => /half/.test(h)) : -1,
+    full: hasHeader ? headers.findIndex((h) => /full/.test(h)) : -1,
+    description: hasHeader ? headers.findIndex((h) => /desc/.test(h)) : 3,
+  };
+
+  const rows: MenuCsvRow[] = [];
+  for (const line of lines.slice(hasHeader ? 1 : 0)) {
+    const cells = splitCsv(line);
+    const category = cells[col.category] || '';
+    const itemName = cells[col.item] || '';
+    const halfPrice = col.half >= 0 ? parseMoney(cells[col.half]) : 0;
+    const fullPrice = col.full >= 0 ? parseMoney(cells[col.full]) : 0;
+    let price = col.price >= 0 ? parseMoney(cells[col.price]) : 0;
+    if (halfPrice > 0 && fullPrice > 0 && !(price > 0)) price = Math.min(halfPrice, fullPrice);
+    const description = col.description >= 0
+      ? (cells[col.description] || '').trim() || undefined
+      : cells.slice(3).join(', ').trim() || undefined;
+    rows.push({
+      category,
+      itemName,
+      price,
+      halfPrice: halfPrice > 0 ? halfPrice : undefined,
+      fullPrice: fullPrice > 0 ? fullPrice : undefined,
+      description,
+    });
+  }
   return rows;
 }
 
@@ -159,7 +201,13 @@ export class MenuService {
     for (const row of parsed) {
       const itemName = row.itemName.trim();
       const categoryName = row.category.trim();
-      if (!itemName || !categoryName || !(row.price > 0)) { skipped += 1; continue; }
+      const halfPrice = Number(row.halfPrice || 0);
+      const fullPrice = Number(row.fullPrice || 0);
+      const options = halfPrice > 0 && fullPrice > 0
+        ? [{ name: 'Half', price: halfPrice }, { name: 'Full', price: fullPrice }]
+        : [];
+      const price = options.length ? Math.min(halfPrice, fullPrice) : row.price;
+      if (!itemName || !categoryName || !(price > 0)) { skipped += 1; continue; }
       let categoryId = byName.get(categoryName.toLowerCase());
       if (!categoryId) {
         const saved = await this.saveCategory(businessId, { categoryName, displayOrder: String(byName.size) });
@@ -167,13 +215,14 @@ export class MenuService {
         byName.set(categoryName.toLowerCase(), categoryId);
         categoriesCreated += 1;
       }
-      await this.db.query(
-        `INSERT INTO public."MenuItems" (businessid, categoryid, itemname, description, price, displayorder, isavailable, isactive) VALUES ($1,$2,$3,$4,$5,0,true,true)`,
-        [businessId, categoryId, itemName, row.description || null, row.price],
+      const inserted = await this.db.one<{ itemid: number }>(
+        `INSERT INTO public."MenuItems" (businessid, categoryid, itemname, description, price, displayorder, isavailable, isactive) VALUES ($1,$2,$3,$4,$5,0,true,true) RETURNING itemid`,
+        [businessId, categoryId, itemName, row.description || null, price],
       );
+      if (options.length && inserted?.itemid) await this.replaceExtras(inserted.itemid, options, []);
       created += 1;
     }
-    if (!created) throw new BadRequestException('No valid rows. Use columns: Category, Item, Price, Description.');
+    if (!created) throw new BadRequestException('No valid rows. Use columns: Category, Item, Price, HalfPrice, FullPrice, Description.');
     return { created, categoriesCreated, skipped };
   }
   async removeItem(businessId: number, id: number) {
