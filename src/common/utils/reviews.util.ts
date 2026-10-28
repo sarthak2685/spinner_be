@@ -61,138 +61,141 @@ function hashSeed(input: string) {
 }
 
 const UNKNOWN_BANK: ReviewTemplate[] = [
-  (kw) => `${kw} wali feeling thi, simple aur genuine. Wapas aunga.`,
-  (kw) => `Bina bakwas ke ${kw} mila. Bilkul theek laga.`,
-  (kw) => `Jo chahiye tha wahi — ${kw}. Short visit, khush.`,
-  (kw) => `${kw} pe focus clear tha. Zyada kuch nahi chahiye tha.`,
-  (kw) => `Honestly ${kw} hi yaad rahega. Baaki chill.`,
-  (kw) => `Thoda ${kw}, thoda easy vibe. Kaafi tha mere liye.`,
+  (kw) => {
+    const tip = kw.trim().split(/\s+/).slice(0, 2).join(' ');
+    return tip ? `Jo expect kiya usme se ${tip} wali feel mili. Simple visit.` : 'Jo expect kiya wahi feel mili. Simple visit.';
+  },
+  () => `Bina bakwas ke theek laga. Short aur genuine.`,
+  () => `Jo chahiye tha wahi feel. Khush, wapas aunga.`,
+  () => `Focus clear tha visit pe. Zyada kuch nahi chahiye tha.`,
+  () => `Honestly yahi yaad rahega. Baaki chill.`,
+  () => `Thoda easy vibe, kaafi tha mere liye.`,
 ];
 
 const FRIENDLY_STAFF: ReviewTemplate[] = [
   () => `Staff friendly tha, baat seedhi. Tension nahi li.`,
-  () => `Friendly staff ne casually help ki. Feel good.`,
+  () => `Log casually help kar diye. Feel good.`,
   () => `Log friendly the, rush nahi. Simple visit.`,
 ];
 
 const HELPFUL_STAFF: ReviewTemplate[] = [
-  () => `Helpful staff ne jaldi samjha diya. Easy ho gaya.`,
+  () => `Staff ne jaldi samjha diya. Easy ho gaya.`,
   () => `Sawal poocha, helpful jawab mila. No drama.`,
   () => `Staff helpful tha bina pressure ke. Theek raha.`,
 ];
 
 const CARING_STAFF: ReviewTemplate[] = [
-  () => `Caring staff, dheere se baat ki. Comfortable feel.`,
+  () => `Staff dheere se baat ki. Comfortable feel.`,
   () => `Staff caring laga, rush nahi kiya. Sukoon.`,
-  () => `Caring log the, patiently sun liya. Accha laga.`,
+  () => `Log patiently sun liya. Accha laga.`,
 ];
 
 const SKILLED_STYLIST: ReviewTemplate[] = [
-  () => `Skilled stylist ne samajh ke kaam kiya. Result theek.`,
+  () => `Haath steady tha, samajh ke kaam kiya. Result theek.`,
   () => `Stylist skilled tha, guesswork nahi. Happy.`,
-  () => `Skilled stylist, haath steady. Jo bola wahi.`,
+  () => `Jo bola wahi mila, haath clean. Solid.`,
 ];
 
 const GOOD_TRAINERS: ReviewTemplate[] = [
-  () => `Good trainers ne form theek kiya. Progress feel.`,
+  () => `Trainers ne form theek kiya. Progress feel.`,
   () => `Trainers good the, shout nahi, clear tips.`,
-  () => `Good trainers, level ke hisaab se. Solid.`,
+  () => `Level ke hisaab se guide kiya. Solid.`,
 ];
 
 const GREAT_FOOD: ReviewTemplate[] = [
-  () => `Great food, flavour theek tha. Next time bhi.`,
+  () => `Khana accha laga, flavour theek tha. Next time bhi.`,
   () => `Food great laga, garam aur simple. Sorted.`,
-  () => `Great food bina fuss ke. Plate khali.`,
+  () => `Bina fuss ke plate khali. Mazaa aa gaya.`,
 ];
 
 const TASTY: ReviewTemplate[] = [
   () => `Tasty tha, balance accha. Leftover zero.`,
-  () => `Honestly tasty specials. Comfort wali feeling.`,
+  () => `Honestly taste comfort wali feeling. Happy.`,
   () => `Sabne bola tasty. Rare unanimous vote.`,
 ];
 
 const FRESH: ReviewTemplate[] = [
   () => `Fresh feel tha, light aur clean taste.`,
-  () => `Ingredients fresh lage. Difference dikhta hai.`,
+  () => `Fresh lage cheezein. Difference dikhta hai.`,
   () => `Light aur fresh chahiye tha, mila. Satisfied.`,
 ];
 
 const QUICK_SERVICE: ReviewTemplate[] = [
-  () => `Quick service, busy day pe perfect.`,
+  () => `Service jaldi thi, busy day pe kaam aa gaya.`,
   () => `Service quick thi, corners cut nahi. Smile bhi.`,
-  () => `Quick service, wait nahi. Counter pe clear.`,
+  () => `Wait nahi, counter pe clear. Sorted.`,
 ];
 
 const CLEAN_PLACE: ReviewTemplate[] = [
-  () => `Clean place, tables floors theek. Trust ban gaya.`,
+  () => `Jagah clean, tables floors theek. Trust ban gaya.`,
   () => `Clean feel andar aate hi. Settle ho gaya.`,
-  () => `Clean place matter karta hai, yahan mila.`,
+  () => `Cleanliness matter karti hai, yahan mili.`,
 ];
 
 const CLEAN_SALON: ReviewTemplate[] = [
-  () => `Clean salon, stations wipe, tools sorted. Safe feel.`,
+  () => `Salon clean, stations wipe, tools sorted. Safe feel.`,
   () => `Salon clean tha, floors clear. Fresh vibe.`,
-  () => `Clean salon details theek. Mirror se basin tak.`,
+  () => `Details theek — mirror se basin tak. Clean.`,
 ];
 
 const CLEAN_GYM: ReviewTemplate[] = [
-  () => `Clean gym, floors dry, lockers usable. Focus raha.`,
+  () => `Gym clean, floors dry, lockers usable. Focus raha.`,
   () => `Gym clean standards acchi. Mats maintained.`,
-  () => `Peak pe bhi clean gym. Habits dikhti hain.`,
+  () => `Peak pe bhi clean raha. Habits dikhti hain.`,
 ];
 
 const CLEAN_CLINIC: ReviewTemplate[] = [
-  () => `Clean clinic feel, waiting calm. Reassuring.`,
+  () => `Clinic clean feel, waiting calm. Reassuring.`,
   () => `Clinic clean, process clear. Tension kam.`,
-  () => `Clean clinic environment. Care ke saath matter.`,
+  () => `Environment clean. Care ke saath matter.`,
 ];
 
 const HYGIENIC: ReviewTemplate[] = [
-  () => `Hygienic practice, tools sanitised. Shortcuts nahi.`,
+  () => `Hygiene theek, tools sanitised. Shortcuts nahi.`,
   () => `Hygienic aur organised. Peace of mind.`,
-  () => `Check-in se finish tak hygienic. Wahi chahiye.`,
+  () => `Check-in se finish tak hygiene clear. Wahi chahiye.`,
 ];
 
 const RELAXING: ReviewTemplate[] = [
   () => `Relaxing tha, soft pace. Lighter feel.`,
-  () => `Break chahiye tha, relaxing hour mila. No rush.`,
-  () => `Relaxing vibe, sleepy nahi. Mid-week reset.`,
+  () => `Break chahiye tha, calm hour mila. No rush.`,
+  () => `Calm vibe, sleepy nahi. Mid-week reset.`,
 ];
 
 const COMFORTABLE: ReviewTemplate[] = [
   () => `Comfortable baithte hi. Pace theek.`,
   () => `Lambi visit bhi comfortable. Wait awkward nahi.`,
-  () => `Comfortable space, clock check nahi kiya.`,
+  () => `Space comfortable, clock check nahi kiya.`,
 ];
 
 const GOOD_VALUE: ReviewTemplate[] = [
-  () => `Good value, price ke hisaab se quality. Bill clean.`,
-  () => `Fair spend, good value wapas. Prefer yahi.`,
-  () => `Good value bina quality cut. Hard to find.`,
+  () => `Price ke hisaab se quality theek. Bill clean.`,
+  () => `Fair spend, value wapas mili. Prefer yahi.`,
+  () => `Value mila bina quality cut. Hard to find.`,
 ];
 
 const FAIR_PRICE: ReviewTemplate[] = [
-  () => `Fair price, solid quality. Surprise add-on nahi.`,
-  () => `Fair price pe premium feel. Cost pe recommend.`,
-  () => `Compare kiya, fair price plus consistent. Won.`,
+  () => `Price fair, solid quality. Surprise add-on nahi.`,
+  () => `Price pe premium feel. Cost pe recommend.`,
+  () => `Compare kiya, fair rate plus consistent. Won.`,
 ];
 
 const WORTH_VISITING: ReviewTemplate[] = [
-  () => `Worth visiting, reliable stop. Doost ko bata diya.`,
-  () => `Time nikaala, worth visiting. Reviews se better.`,
-  () => `Short: worth visiting. Clear strengths, no drama.`,
+  () => `Aane layak stop. Doost ko bata diya.`,
+  () => `Time nikaala, worth it. Reviews se better.`,
+  () => `Short: aane layak. Clear strengths, no drama.`,
 ];
 
 const WORTH_JOINING: ReviewTemplate[] = [
-  () => `Worth joining, structure milta hai. Paying off.`,
-  () => `Kuch try kiye, worth joining coaching ke liye.`,
-  () => `Honest: worth joining. Clean space, clear plans.`,
+  () => `Join karne layak, structure milta hai. Paying off.`,
+  () => `Kuch try kiye, yahan coaching ke liye stick.`,
+  () => `Honest: join karo. Clean space, clear plans.`,
 ];
 
 const ON_TIME: ReviewTemplate[] = [
-  () => `On time chala, booked pe start. Scramble nahi.`,
-  () => `Rare: on time plus full attention. Respect.`,
-  () => `Tight schedule pe on time. Loyalty isi se.`,
+  () => `Time pe chala, booked pe start. Scramble nahi.`,
+  () => `Rare: time pe plus full attention. Respect.`,
+  () => `Tight schedule pe bhi time pe. Loyalty isi se.`,
 ];
 
 const GENTLE: ReviewTemplate[] = [
@@ -204,55 +207,55 @@ const GENTLE: ReviewTemplate[] = [
 const PROFESSIONAL: ReviewTemplate[] = [
   () => `Professional vibe, polished feel. Wapas aunga.`,
   () => `Staff professional, attentive. Rush nahi.`,
-  () => `Professional attitude start se finish. Solid.`,
+  () => `Attitude start se finish solid. Clean work.`,
 ];
 
 const CLEAR_ADVICE: ReviewTemplate[] = [
-  () => `Clear advice, jargon nahi. Next steps simple.`,
-  () => `Clear advice aur plan. Clarity worth it.`,
-  () => `Clear advice pe sawal khatam. Informed feel.`,
+  () => `Advice clear, jargon nahi. Next steps simple.`,
+  () => `Advice aur plan clear. Clarity worth it.`,
+  () => `Sawal khatam clear tip pe. Informed feel.`,
 ];
 
 const EASY_BOOKING: ReviewTemplate[] = [
-  () => `Easy booking, slot confirm, chase nahi.`,
+  () => `Booking easy, slot confirm, chase nahi.`,
   () => `Booking easy, reschedule bhi simple.`,
   () => `Booking se visit easy. Desk pe confusion nahi.`,
 ];
 
 const WELL_EQUIPPED: ReviewTemplate[] = [
-  () => `Well equipped, machine wait nahi. Efficient.`,
-  () => `Floor well equipped, gear kaam karta hai.`,
-  () => `Well equipped strength cardio. Expectation match.`,
+  () => `Gear kaafi, machine wait nahi. Efficient.`,
+  () => `Floor pe gear kaam karta hai. Training smooth.`,
+  () => `Strength cardio dono cover. Expectation match.`,
 ];
 
 const MOTIVATING: ReviewTemplate[] = [
-  () => `Motivating energy, shout nahi. Next session chahiye.`,
-  () => `Motivating coaches, effort honest. Hard day doable.`,
-  () => `Push chahiye? Motivating right way. Support first.`,
+  () => `Energy motivating, shout nahi. Next session chahiye.`,
+  () => `Coaches motivate, effort honest. Hard day doable.`,
+  () => `Push chahiye? Support first, ego second.`,
 ];
 
 const GOOD_QUALITY: ReviewTemplate[] = [
-  () => `Good quality, weeks baad bhi theek. Cheap feel nahi.`,
-  () => `Good quality pieces, look finish dono ok.`,
-  () => `Good quality sensible price. Mall se pehle yahi.`,
+  () => `Quality weeks baad bhi theek. Cheap feel nahi.`,
+  () => `Pieces ka look finish dono ok.`,
+  () => `Quality sensible price. Mall se pehle yahi.`,
 ];
 
 const NEAT_STORE: ReviewTemplate[] = [
-  () => `Neat store, aisles clear. Easy find.`,
+  () => `Store neat, aisles clear. Easy find.`,
   () => `Store neat, shopping calm. Chaos nahi.`,
-  () => `Neat layout, browsing quick. Hunting nahi.`,
+  () => `Layout neat, browsing quick. Hunting nahi.`,
 ];
 
 const GOOD_RANGE: ReviewTemplate[] = [
-  () => `Good range, options kaafi, clutter nahi.`,
-  () => `Variety chahiye thi, good range ek stop.`,
-  () => `Good range plus honest tip. Right pick.`,
+  () => `Options kaafi, clutter nahi. Range theek.`,
+  () => `Variety chahiye thi, ek stop pe mil gayi.`,
+  () => `Range plus honest tip. Right pick.`,
 ];
 
 const EASY_CHECKOUT: ReviewTemplate[] = [
-  () => `Easy checkout, bill clear, payment fast.`,
-  () => `Busy pe bhi easy checkout. Line short.`,
-  () => `Cart se bag jaldi. Easy checkout nail.`,
+  () => `Checkout easy, bill clear, payment fast.`,
+  () => `Busy pe bhi checkout easy. Line short.`,
+  () => `Cart se bag jaldi. Checkout nail.`,
 ];
 
 const KEYWORD_BANKS: Record<string, ReviewTemplate[]> = {
@@ -358,25 +361,40 @@ const INVENTED_TERMS = [
   // food / drink
   'pasta', 'burger', 'pizza', 'dessert', 'latte', 'cappuccino', 'sushi', 'biryani',
   'momos', 'noodles', 'steak', 'sandwich', 'waffle', 'smoothie', 'cocktail', 'chai',
-  'coffee', 'thali', 'samosa', 'dosa', 'idli', 'paneer', 'chicken', 'mutton',
+  'coffee', 'thali', 'samosa', 'dosa', 'idli', 'paneer', 'chicken', 'mutton', 'dish', 'dishes',
+  'menu', 'ingredients', 'taste buds', 'lunch', 'dinner', 'breakfast',
   // salon / spa
   'hair', 'haircut', 'hair cut', 'new cut', 'fresh look', 'facial', 'massage',
-  'manicure', 'pedicure', 'wax', 'bleach', 'highlights', 'keratin', 'spa package',
-  // clinic / gym
+  'manicure', 'pedicure', 'wax', 'bleach', 'highlights', 'keratin', 'spa package', 'appointment',
+  // clinic / gym / filler invent
   'injection', 'surgery', 'x-ray', 'xray', 'treadmill', 'deadlift', 'protein shake',
+  'atmosphere', 'ambience', 'perfect spot',
 ];
+
+const HINGLISH_MARKERS =
+  /\b(tha|thi|the|hai|hain|hoon|ne|pe|ko|se|aur|bahut|accha|achha|theek|laga|lage|kiya|kiye|wala|wali|bhai|yaar|matlab|bilkul|zyada|thoda|wapas|aunga|aayega|nahi|nahin|kaafi|ekdum|sabse|dost|mood|vibe|vibes|feel|mila|lagta|bohot)\b/i;
+
+function looksHinglish(text: string) {
+  if (/[\u0900-\u097F]/.test(text)) return true;
+  return HINGLISH_MARKERS.test(text);
+}
 
 const AI_FLUFF = [
   /totally satisfied/i,
+  /full satisfaction/i,
   /highly recommend/i,
   /thanks to\b/i,
   /overall experience/i,
   /everything was (good|great|amazing)/i,
   /\b(must visit|must try)\b/i,
   /\b(5|five)[\s-]?star/i,
-  /\bperfect\b/i,
   /\bamazing experience\b/i,
   /\bwill definitely (return|come back)\b/i,
+  /\blooks? perfect\b/i,
+  /\bperfect spot\b/i,
+  /\btop class\b/i,
+  /\bgame badal/i,
+  /\bprofessional service\b/i,
 ];
 
 function escapeRe(value: string) {
@@ -392,23 +410,41 @@ function hasInventedTerm(text: string, keywordsJoined: string) {
   });
 }
 
+/** Multi-word keywords must be paraphrased — reject exact phrase paste. */
+function hasVerbatimMultiWordKeyword(text: string, keywords: string[]) {
+  const lower = text.toLowerCase();
+  return keywords.some((kw) => {
+    const phrase = kw.trim().toLowerCase();
+    if (!phrase.includes(' ') || phrase.length < 4) return false;
+    return lower.includes(phrase);
+  });
+}
+
 function keywordPastedTooOften(text: string, keywords: string[]) {
   const lower = text.toLowerCase();
   return keywords.some((kw) => {
     const phrase = kw.trim().toLowerCase();
-    if (phrase.length < 3) return false;
-    const re = new RegExp(escapeRe(phrase), 'gi');
+    if (phrase.length < 3 || phrase.includes(' ')) return false;
+    const re = new RegExp(`\\b${escapeRe(phrase)}\\b`, 'gi');
     const hits = lower.match(re);
     return (hits?.length || 0) >= 2;
   });
 }
 
-function awkwardKeywordOpening(text: string, keywords: string[]) {
+function personifiedKeyword(text: string, keywords: string[]) {
+  const lower = text.toLowerCase();
+  return keywords.some((kw) => {
+    const phrase = kw.trim().toLowerCase();
+    if (phrase.length < 3) return false;
+    return new RegExp(`${escapeRe(phrase)}\\s+ne\\b`, 'i').test(lower);
+  });
+}
+
+function awkwardTheKeywordOpening(text: string, keywords: string[]) {
   const lower = text.toLowerCase().trim();
   return keywords.some((kw) => {
     const phrase = kw.trim().toLowerCase();
-    if (!phrase) return false;
-    return lower.startsWith(`the ${phrase}`) || lower.startsWith(phrase);
+    return phrase.length > 2 && lower.startsWith(`the ${phrase}`);
   });
 }
 
@@ -429,10 +465,13 @@ export function filterReviewDrafts(drafts: string[], businessName: string, keywo
     if (!text) continue;
     const lower = text.toLowerCase();
     if (name && name.length > 1 && lower.includes(name)) continue;
+    if (!looksHinglish(text)) continue;
     if (hasInventedTerm(text, kwJoined)) continue;
     if (AI_FLUFF.some((re) => re.test(text))) continue;
+    if (hasVerbatimMultiWordKeyword(text, kwList)) continue;
     if (keywordPastedTooOften(text, kwList)) continue;
-    if (awkwardKeywordOpening(text, kwList)) continue;
+    if (personifiedKeyword(text, kwList)) continue;
+    if (awkwardTheKeywordOpening(text, kwList)) continue;
     if (text.length > maxLen + 20) continue;
     const clipped = text.length > maxLen ? text.slice(0, maxLen).replace(/\s+\S*$/, '').trim() : text;
     if (clipped.length < 8) continue;

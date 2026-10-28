@@ -118,10 +118,8 @@ export class PublicService {
     const raw = await this.askGroq(business.businessname, keywords);
     const filtered = filterReviewDrafts(Array.isArray(raw) ? raw : [], business.businessname, keywords);
     const pad = fallbackReviews(business.businessname, keywords);
-    // If Groq mostly invents / fluff, prefer safe Hinglish banks.
-    const mixed = filtered.length >= 2
-      ? [...filtered, ...pad]
-      : pad;
+    // Prefer clean Groq lines; if fewer than 2 survive, use banks only (avoids mixed awkward quality).
+    const mixed = filtered.length >= 2 ? [...filtered, ...pad] : pad;
     const safe = mixed.filter((line, i, arr) => line && arr.indexOf(line) === i).slice(0, 3);
     return { reviews: safe.length ? safe : pad.slice(0, 3), googleReviewUrl: business.googlereviewurl || '', keywords };
   }
@@ -137,35 +135,38 @@ export class PublicService {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
         body: JSON.stringify({
           model: 'openai/gpt-oss-20b',
-          temperature: 0.45,
+          temperature: 0.55,
           response_format: { type: 'json_object' },
           messages: [
             {
               role: 'system',
               content: [
-                'Return only JSON: {"reviews":["draft1","draft2","draft3"]}. No markdown.',
-                'Each draft is simple conversational Hinglish (Hindi+English mix), plain text.',
-                'No emojis, emoticons, hashtags, quotes, or headings.',
-                'Informal human tone; casual grammar OK; not polished, robotic, or marketing.',
-                'Focus only on the feel of the given keywords; do not invent extra story.',
-                'Never mention a business name.',
-                'Never invent service, product, dish, hair, cut, facial, massage, food, or drink names unless that exact word is one of the keywords.',
-                'Do not paste the keyword phrase as-is. Paraphrase (e.g. skilled stylist -> "haath steady / kaam clean tha").',
-                'Do not start with "The" + keyword. Do not repeat the same keyword phrase twice in one draft.',
-                'Banned fluff: thanks to, totally satisfied, perfect, highly recommend, overall experience, everything was good, must visit, star ratings.',
-                `Length: 1 keyword prefer 40–80 chars (hard max 100); 2–3 keywords 80–160 (hard max 180). Keep short.`,
+                'You are a Natural Google Review Generator.',
+                'Return only JSON: {"reviews":["draft1","draft2","draft3"]}. No markdown, no extra keys.',
+                'Each string is one short review draft. Plain text only.',
+                '1. Language: Simple conversational Hinglish only.',
+                '2. Style: Informal, human-like. Casual grammar OK. Occasional minor mistakes OK. Not fixed templates.',
+                '3. Tone: Casual, simple, not polished or robotic.',
+                '4. Keywords: Focus ONLY on the selected keyword ideas. No unrelated details.',
+                '5. Never mention business name, service names, product names, or dish names.',
+                '6. Never invent customer experiences or extra details beyond the keywords.',
+                '7. Avoid generic lines like "overall experience" or "everything was good".',
+                '8. Length: 1 keyword under 100 chars; 2-3 keywords 100-180 chars. If thin, keep very short.',
+                '9. Avoid repetitive patterns, formal language, marketing words, and star ratings.',
+                '10. Never use emojis or emoticons. No headings, explanations, quotation marks, or hashtags.',
+                'CRITICAL wording: Do NOT paste multi-word keywords as-is into the sentence.',
+                'Paraphrase so the sentence sounds natural (e.g. "skilled stylist" -> "haath steady / kaam clean tha"; "great food" -> "khana accha laga / flavour theek tha"; "friendly staff" -> "log friendly the / staff ne casually help ki").',
+                'Never write "{keyword} ne ..." (do not personify the keyword phrase).',
                 'Three distinct drafts, different openings, same rules.',
               ].join(' '),
             },
             {
               role: 'user',
               content: [
-                `Keywords: ${list.join(', ')}. Count: ${n}.`,
-                'Write 3 different short Hinglish review drafts about only these ideas.',
-                'No shop name. No invented haircut/dish/service details.',
-                n > 1
-                  ? 'Weave the ideas naturally without dumping the exact keyword text.'
-                  : 'Centre on that one idea with three different casual wordings.',
+                `Selected keywords: ${list.join(', ')}. Count: ${n}.`,
+                'Generate 3 short Hinglish review drafts from these keyword ideas only.',
+                'Paraphrase — do not dump the exact keyword phrase into the line.',
+                'No shop name. No invented dishes, services, menu, appointments, or products.',
               ].join(' '),
             },
           ],

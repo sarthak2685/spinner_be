@@ -53,17 +53,16 @@ describe('review copy', () => {
     expect(new Set(reviews).size).toBe(3);
   });
 
-  it('covers each selected keyword when multiple are picked', () => {
+  it('covers selected keyword ideas when multiple are picked', () => {
     const reviews = fallbackReviews('Glow Salon', ['clean salon', 'relaxing']).join(' ').toLowerCase();
-    expect(reviews).toMatch(/clean salon|relaxing/);
-    expect(reviews).toMatch(/relaxing/);
+    expect(reviews).toMatch(/salon|clean|relaxing|calm/);
   });
 
   it('still varies for unknown custom keywords', () => {
     const reviews = fallbackReviews('Corner Shop', ['amazing chai']);
     expect(reviews).toHaveLength(3);
     expect(new Set(reviews).size).toBe(3);
-    expect(reviews.every((line) => /amazing chai/i.test(line))).toBe(true);
+    expect(reviews.every((line) => line.length >= 8)).toBe(true);
   });
 
   it('filter drops shop name and invented products', () => {
@@ -93,17 +92,55 @@ describe('review copy', () => {
     expect(kept).toEqual(['Haath steady tha, result theek. Wapas aunga.']);
   });
 
-  it('filter drops keyword dump openings and AI fluff', () => {
+  it('rejects verbatim multi-word keywords and personified dumps', () => {
     const kept = filterReviewDrafts(
       [
+        'Friendly staff ne casually help ki. Feel good.',
         'skilled stylist skilled stylist best',
+        'Great food ne taste buds surprise kar diya.',
         'Totally satisfied with the visit overall experience',
+        'The skilled stylist was great',
         'Kaam clean tha, rush nahi. Accha laga.',
+        'Log friendly the, haath steady. Simple visit.',
       ],
       'Test Shop',
-      ['skilled stylist'],
+      ['friendly staff', 'skilled stylist', 'great food'],
     );
-    expect(kept).toEqual(['Kaam clean tha, rush nahi. Accha laga.']);
+    expect(kept).toEqual([
+      'Kaam clean tha, rush nahi. Accha laga.',
+      'Log friendly the, haath steady. Simple visit.',
+    ]);
+  });
+
+  it('keeps paraphrased food drafts without inventing dishes', () => {
+    const kept = filterReviewDrafts(
+      [
+        'Tasty tha, garam aur simple. Sorted.',
+        'Great food with pasta and burger, amazing.',
+        'Fresh feel, light taste. Satisfied.',
+        'Khana accha laga, fresh aur value theek.',
+      ],
+      'Cafe50',
+      ['tasty', 'great food', 'fresh'],
+    );
+    expect(kept).toEqual([
+      'Tasty tha, garam aur simple. Sorted.',
+      'Fresh feel, light taste. Satisfied.',
+      'Khana accha laga, fresh aur value theek.',
+    ]);
+  });
+
+  it('rejects plain English drafts that are not Hinglish', () => {
+    const kept = filterReviewDrafts(
+      [
+        'Great food, fresh taste, quick service made my lunch perfect.',
+        'Fresh dishes hit the spot and the service was quick.',
+        'Khana accha mila, fresh aur service jaldi. Solid.',
+      ],
+      'Cafe50',
+      ['great food', 'fresh', 'quick service'],
+    );
+    expect(kept).toEqual(['Khana accha mila, fresh aur service jaldi. Solid.']);
   });
 
   it('salon fallback does not invent pasta or burger', () => {
