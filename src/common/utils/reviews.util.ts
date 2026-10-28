@@ -1,9 +1,9 @@
-const FOOD_WORDS = ['friendly staff', 'great food', 'tasty', 'fresh', 'quick service', 'clean place', 'good value', 'worth visiting'];
-const SALON_WORDS = ['friendly staff', 'skilled stylist', 'clean salon', 'relaxing', 'hygienic', 'on time', 'gentle', 'worth visiting'];
+const FOOD_WORDS = ['Great Food', 'Tasty Food', 'Fresh Food', 'Quick Service', 'Clean Area', 'Good Value for Money'];
+const SALON_WORDS = ['Best Salon', 'Best Spa', 'Best Beauty Services', 'Excellent Service', 'Friendly Staff', 'Clean & Hygienic', 'Highly Satisfied'];
 const GYM_WORDS = ['friendly staff', 'good trainers', 'clean gym', 'well equipped', 'motivating', 'on time', 'good value', 'worth joining'];
-const CLINIC_WORDS = ['caring staff', 'clean clinic', 'on time', 'clear advice', 'gentle', 'professional', 'easy booking', 'worth visiting'];
-const RETAIL_WORDS = ['helpful staff', 'good quality', 'fair price', 'neat store', 'quick service', 'good range', 'easy checkout', 'worth visiting'];
-const GENERIC_WORDS = ['friendly staff', 'quick service', 'clean place', 'good value', 'professional', 'on time', 'comfortable', 'worth visiting'];
+const CLINIC_WORDS = ['Caring Doctor', 'Clear Advice', 'Clean Clinic', 'Short Waiting Time', 'Helpful Clinic Staff', 'Good Experience'];
+const RETAIL_WORDS = ['Good Product Quality', 'Latest Collection', 'More Choices', 'Affordable Prices', 'Helpful Staff in Store', 'Good Value'];
+const GENERIC_WORDS = ['Friendly Staff', 'Quick Service', 'Clean Area', 'Good Value', 'Excellent Service', 'on time', 'comfortable', 'worth visiting'];
 
 export function keywordsForBusinessType(type?: string | null) {
   const text = (type || '').toLowerCase();
@@ -90,10 +90,40 @@ const CARING_STAFF: ReviewTemplate[] = [
   () => `Log patiently sun liya. Accha laga.`,
 ];
 
+const CARING_DOCTOR: ReviewTemplate[] = [
+  () => `Doctor care se sun liya, rush nahi. Sukoon.`,
+  () => `Baat dheere se hui, tension kam ho gayi.`,
+  () => `Care clear thi, patiently guide kiya. Accha laga.`,
+];
+
 const SKILLED_STYLIST: ReviewTemplate[] = [
   () => `Haath steady tha, samajh ke kaam kiya. Result theek.`,
   () => `Stylist skilled tha, guesswork nahi. Happy.`,
   () => `Jo bola wahi mila, haath clean. Solid.`,
+];
+
+const BEST_SALON: ReviewTemplate[] = [
+  () => `Salon vibe theek lagi, kaam clean. Wapas aunga.`,
+  () => `Yahan ka setup simple aur sorted. Happy.`,
+  () => `Salon experience light aur easy tha.`,
+];
+
+const BEST_SPA: ReviewTemplate[] = [
+  () => `Spa pace slow tha, dil light ho gaya.`,
+  () => `Calm space, body ease feel. Nice break.`,
+  () => `Spa wali shanti mili, rush zero.`,
+];
+
+const BEST_BEAUTY: ReviewTemplate[] = [
+  () => `Beauty kaam neat laga, finish clean.`,
+  () => `Look soft aur theek bana. Khush.`,
+  () => `Beauty side pe detail care dikhi.`,
+];
+
+const EXCELLENT_SERVICE: ReviewTemplate[] = [
+  () => `Service smooth thi, tension nahi li.`,
+  () => `Kaam clean chala, wait awkward nahi.`,
+  () => `Service feel acchi, simple aur clear.`,
 ];
 
 const GOOD_TRAINERS: ReviewTemplate[] = [
@@ -150,10 +180,22 @@ const CLEAN_CLINIC: ReviewTemplate[] = [
   () => `Environment clean. Care ke saath matter.`,
 ];
 
+const CLEAN_HYGIENIC: ReviewTemplate[] = [
+  () => `Clean aur hygiene clear. Shortcuts nahi.`,
+  () => `Jagah tidy, tools sorted. Peace of mind.`,
+  () => `Cleanliness pe dhyan dikhta hai. Safe feel.`,
+];
+
 const HYGIENIC: ReviewTemplate[] = [
   () => `Hygiene theek, tools sanitised. Shortcuts nahi.`,
   () => `Hygienic aur organised. Peace of mind.`,
   () => `Check-in se finish tak hygiene clear. Wahi chahiye.`,
+];
+
+const HIGHLY_SATISFIED: ReviewTemplate[] = [
+  () => `Dil se khush, bilkul theek laga.`,
+  () => `Expectation match, mood light. Sorted.`,
+  () => `Simple visit, dil khush. Wapas aunga.`,
 ];
 
 const RELAXING: ReviewTemplate[] = [
@@ -172,6 +214,18 @@ const GOOD_VALUE: ReviewTemplate[] = [
   () => `Price ke hisaab se quality theek. Bill clean.`,
   () => `Fair spend, value wapas mili. Prefer yahi.`,
   () => `Value mila bina quality cut. Hard to find.`,
+];
+
+const GOOD_VALUE_MONEY: ReviewTemplate[] = [
+  () => `Paisa wasool laga, quality match. Bill clean.`,
+  () => `Price ok, value clear. Prefer yahi.`,
+  () => `Spend ke hisaab se return theek. Solid.`,
+];
+
+const AFFORDABLE_PRICES: ReviewTemplate[] = [
+  () => `Rates soft lage, pressure nahi. Easy buy.`,
+  () => `Price light thi, budget friendly. Happy.`,
+  () => `Affordable feel, bill dekh ke chill.`,
 ];
 
 const FAIR_PRICE: ReviewTemplate[] = [
@@ -198,6 +252,12 @@ const ON_TIME: ReviewTemplate[] = [
   () => `Tight schedule pe bhi time pe. Loyalty isi se.`,
 ];
 
+const SHORT_WAIT: ReviewTemplate[] = [
+  () => `Wait short tha, jaldi turn aa gaya.`,
+  () => `Line light, time waste nahi. Sorted.`,
+  () => `Waiting kam, process smooth. Happy.`,
+];
+
 const GENTLE: ReviewTemplate[] = [
   () => `Gentle feel, ineffective nahi. Comfortable raha.`,
   () => `Gentle approach, results bhi. Harsh nahi.`,
@@ -214,6 +274,12 @@ const CLEAR_ADVICE: ReviewTemplate[] = [
   () => `Advice clear, jargon nahi. Next steps simple.`,
   () => `Advice aur plan clear. Clarity worth it.`,
   () => `Sawal khatam clear tip pe. Informed feel.`,
+];
+
+const GOOD_EXPERIENCE: ReviewTemplate[] = [
+  () => `Visit soft raha, dil light. Simple aur theek.`,
+  () => `End tak flow clear tha. Khush.`,
+  () => `Bas feel acchi thi, drama nahi. Wapas.`,
 ];
 
 const EASY_BOOKING: ReviewTemplate[] = [
@@ -240,6 +306,18 @@ const GOOD_QUALITY: ReviewTemplate[] = [
   () => `Quality sensible price. Mall se pehle yahi.`,
 ];
 
+const LATEST_COLLECTION: ReviewTemplate[] = [
+  () => `Naye pieces dikhe, fresh stock feel.`,
+  () => `Collection updated lagi. Browse mazaa.`,
+  () => `Latest wali variety mil gayi. Sorted.`,
+];
+
+const MORE_CHOICES: ReviewTemplate[] = [
+  () => `Options kaafi the, choose easy ho gaya.`,
+  () => `Choice zyada, confuse nahi. Helpful.`,
+  () => `Variety mili, ek stop pe kaam.`,
+];
+
 const NEAT_STORE: ReviewTemplate[] = [
   () => `Store neat, aisles clear. Easy find.`,
   () => `Store neat, shopping calm. Chaos nahi.`,
@@ -258,44 +336,81 @@ const EASY_CHECKOUT: ReviewTemplate[] = [
   () => `Cart se bag jaldi. Checkout nail.`,
 ];
 
+const HELPFUL_CLINIC_STAFF: ReviewTemplate[] = [
+  () => `Clinic staff ne clearly guide kiya. Easy.`,
+  () => `Desk pe help mil gayi, confusion nahi.`,
+  () => `Staff soft tha, process samajh aa gaya.`,
+];
+
+const HELPFUL_STORE_STAFF: ReviewTemplate[] = [
+  () => `Store pe staff ne jaldi locate karwa diya.`,
+  () => `Counter pe help clear, pressure nahi.`,
+  () => `Staff helpful, pick easy ho gaya.`,
+];
+
 const KEYWORD_BANKS: Record<string, ReviewTemplate[]> = {
   'friendly staff': FRIENDLY_STAFF,
   'helpful staff': HELPFUL_STAFF,
   'caring staff': CARING_STAFF,
+  'caring doctor': CARING_DOCTOR,
   'skilled stylist': SKILLED_STYLIST,
+  'best salon': BEST_SALON,
+  'best spa': BEST_SPA,
+  'best beauty services': BEST_BEAUTY,
+  'excellent service': EXCELLENT_SERVICE,
   'good trainers': GOOD_TRAINERS,
   'great food': GREAT_FOOD,
   tasty: TASTY,
+  'tasty food': TASTY,
   fresh: FRESH,
+  'fresh food': FRESH,
   'quick service': QUICK_SERVICE,
   'clean place': CLEAN_PLACE,
+  'clean area': CLEAN_PLACE,
   'clean salon': CLEAN_SALON,
   'clean gym': CLEAN_GYM,
   'clean clinic': CLEAN_CLINIC,
+  'clean & hygienic': CLEAN_HYGIENIC,
+  'clean and hygienic': CLEAN_HYGIENIC,
   hygienic: HYGIENIC,
+  'highly satisfied': HIGHLY_SATISFIED,
   relaxing: RELAXING,
   comfortable: COMFORTABLE,
   'good value': GOOD_VALUE,
+  'good value for money': GOOD_VALUE_MONEY,
+  'affordable prices': AFFORDABLE_PRICES,
   'fair price': FAIR_PRICE,
   'worth visiting': WORTH_VISITING,
   'worth joining': WORTH_JOINING,
   'on time': ON_TIME,
+  'short waiting time': SHORT_WAIT,
   gentle: GENTLE,
   professional: PROFESSIONAL,
   'clear advice': CLEAR_ADVICE,
+  'good experience': GOOD_EXPERIENCE,
   'easy booking': EASY_BOOKING,
   'well equipped': WELL_EQUIPPED,
   motivating: MOTIVATING,
   'good quality': GOOD_QUALITY,
+  'good product quality': GOOD_QUALITY,
+  'latest collection': LATEST_COLLECTION,
+  'more choices': MORE_CHOICES,
   'neat store': NEAT_STORE,
   'good range': GOOD_RANGE,
   'easy checkout': EASY_CHECKOUT,
+  'helpful clinic staff': HELPFUL_CLINIC_STAFF,
+  'helpful staff in store': HELPFUL_STORE_STAFF,
 };
 
 const ALIASES: Record<string, string> = {
-  clean: 'clean place',
-  cleanliness: 'clean place',
-  'clean space': 'clean place',
+  clean: 'clean area',
+  cleanliness: 'clean area',
+  'clean space': 'clean area',
+  'clean place': 'clean area',
+  'tasty': 'tasty food',
+  'fresh': 'fresh food',
+  'good quality': 'good product quality',
+  'value for money': 'good value for money',
 };
 
 function resolveBank(keyword: string): { bank: ReviewTemplate[]; kw: string } {

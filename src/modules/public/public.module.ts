@@ -113,22 +113,25 @@ export class PublicService {
   async generate(body: ReviewBody) {
     const hub = await this.hub(body.token || '');
     const business = hub.business as { businessname: string; googlereviewurl?: string };
+    const kind = hub.type as { typename?: string; typecode?: string } | null;
+    const category = String(kind?.typename || kind?.typecode || '').trim() || 'Local business';
     const fromBody = (body.keywords || []).map((word) => String(word || '').trim()).filter(Boolean);
     const keywords = (fromBody.length ? fromBody : hub.keywords).slice(0, 3);
-    const raw = await this.askGroq(business.businessname, keywords);
+    const raw = await this.askGroq(business.businessname, keywords, category);
     const filtered = filterReviewDrafts(Array.isArray(raw) ? raw : [], business.businessname, keywords);
     const pad = fallbackReviews(business.businessname, keywords);
     // Prefer clean Groq lines; if fewer than 2 survive, use banks only (avoids mixed awkward quality).
     const mixed = filtered.length >= 2 ? [...filtered, ...pad] : pad;
     const safe = mixed.filter((line, i, arr) => line && arr.indexOf(line) === i).slice(0, 3);
-    return { reviews: safe.length ? safe : pad.slice(0, 3), googleReviewUrl: business.googlereviewurl || '', keywords };
+    return { reviews: safe.length ? safe : pad.slice(0, 3), googleReviewUrl: business.googlereviewurl || '', keywords, category };
   }
 
-  private async askGroq(businessName: string, keywords: string[]) {
+  private async askGroq(businessName: string, keywords: string[], category: string) {
     const key = loadConfig().groqApiKey;
     if (!key) return fallbackReviews(businessName, keywords);
     const list = keywords.length ? keywords : ['great visit'];
     const n = list.length;
+    const categoryLabel = category || 'Local business';
     try {
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
@@ -154,8 +157,9 @@ export class PublicService {
                 '8. Length: 1 keyword under 100 chars; 2-3 keywords 100-180 chars. If thin, keep very short.',
                 '9. Avoid repetitive patterns, formal language, marketing words, and star ratings.',
                 '10. Never use emojis or emoticons. No headings, explanations, quotation marks, or hashtags.',
+                'Business category is context only — write a review that fits that category (food place vs salon vs clinic vs retail), but do NOT paste the category name or shop name into the draft.',
                 'CRITICAL wording: Do NOT paste multi-word keywords as-is into the sentence.',
-                'Paraphrase so the sentence sounds natural (e.g. "skilled stylist" -> "haath steady / kaam clean tha"; "great food" -> "khana accha laga / flavour theek tha"; "friendly staff" -> "log friendly the / staff ne casually help ki").',
+                'Paraphrase so the sentence sounds natural (e.g. "great food" -> "khana accha laga"; "friendly staff" -> "log friendly the"; "caring doctor" -> "doctor care se sun liya").',
                 'Never write "{keyword} ne ..." (do not personify the keyword phrase).',
                 'Three distinct drafts, different openings, same rules.',
               ].join(' '),
@@ -163,8 +167,9 @@ export class PublicService {
             {
               role: 'user',
               content: [
+                `Business category: ${categoryLabel}.`,
                 `Selected keywords: ${list.join(', ')}. Count: ${n}.`,
-                'Generate 3 short Hinglish review drafts from these keyword ideas only.',
+                'Generate 3 short Hinglish review drafts that fit this category and only these keyword ideas.',
                 'Paraphrase — do not dump the exact keyword phrase into the line.',
                 'No shop name. No invented dishes, services, menu, appointments, or products.',
               ].join(' '),
