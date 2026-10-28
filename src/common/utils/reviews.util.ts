@@ -431,8 +431,40 @@ function pickThree(bank: ReviewTemplate[], kw: string, seed: number): string[] {
   return out;
 }
 
+const LENGTH_PADS = [
+  ' Simple feel thi, zyada drama nahi.',
+  ' Short visit, mood theek raha.',
+  ' Bina tension ke ho gaya, dil light.',
+  ' Time waste nahi hua, flow clear tha.',
+  ' Wapas aane ka mann hai, honest take.',
+];
+
+/** Keep drafts in the 90–180 character window (single or multi keyword). */
+export function fitReviewLength(text: string) {
+  let t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return t;
+  let i = 0;
+  while (t.length < MIN_REVIEW_LENGTH && i < 12) {
+    t = `${t}${LENGTH_PADS[i % LENGTH_PADS.length]}`.replace(/\s+/g, ' ').trim();
+    i += 1;
+  }
+  if (t.length > MAX_REVIEW_LENGTH) {
+    t = t.slice(0, MAX_REVIEW_LENGTH).replace(/\s+\S*$/, '').trim();
+  }
+  if (t.length < MIN_REVIEW_LENGTH && t.length > 0) {
+    // Last resort: hard pad without inventing products.
+    t = `${t} Simple visit tha, theek laga.`.replace(/\s+/g, ' ').trim().slice(0, MAX_REVIEW_LENGTH);
+  }
+  return t;
+}
+
+function combineParts(parts: string[]) {
+  return `${parts.map((part) => part.replace(/[.]+$/, '').trim()).filter(Boolean).join('. ')}.`;
+}
+
 /**
  * Offline / Groq-fail fallback: keyword banks only — no business name in copy.
+ * Multi-keyword drafts weave ideas into one 90–180 char line each.
  */
 export function fallbackReviews(businessName: string, keywords: string[]) {
   const name = (businessName || 'this place').trim() || 'this place';
@@ -440,32 +472,21 @@ export function fallbackReviews(businessName: string, keywords: string[]) {
   const seed = hashSeed(`${name}|${picked.join('|')}`);
 
   if (picked.length === 0) {
-    return pickThree(UNKNOWN_BANK, 'service', seed);
+    return pickThree(UNKNOWN_BANK, 'service', seed).map(fitReviewLength);
   }
 
   if (picked.length === 1) {
     const { bank, kw } = resolveBank(picked[0]);
-    return pickThree(bank, kw, seed);
+    return pickThree(bank, kw, seed).map(fitReviewLength);
   }
 
   const reviews: string[] = [];
-  picked.forEach((word, index) => {
-    const { bank, kw } = resolveBank(word);
-    const template = bank[(seed + index) % bank.length];
-    reviews.push(template(kw));
-  });
-
-  if (reviews.length === 2) {
-    const { bank, kw } = resolveBank(picked[0]);
-    const second = bank[(seed + 1) % bank.length];
-    const first = bank[seed % bank.length];
-    const extra = second === first && bank.length > 1 ? bank[(seed + 2) % bank.length] : second;
-    const already = reviews[0];
-    let candidate = extra(kw);
-    if (candidate === already && bank.length > 2) {
-      candidate = bank[(seed + 3) % bank.length](kw);
-    }
-    reviews.push(candidate);
+  for (let draft = 0; draft < 3; draft += 1) {
+    const parts = picked.map((word, index) => {
+      const { bank, kw } = resolveBank(word);
+      return bank[(seed + draft + index) % bank.length](kw);
+    });
+    reviews.push(fitReviewLength(combineParts(parts)));
   }
 
   return reviews.slice(0, 3);
@@ -563,20 +584,27 @@ function awkwardTheKeywordOpening(text: string, keywords: string[]) {
   });
 }
 
-export function maxReviewLength(keywordCount: number) {
-  return keywordCount <= 1 ? 100 : 180;
+export const MIN_REVIEW_LENGTH = 90;
+export const MAX_REVIEW_LENGTH = 180;
+
+/** @deprecated use MAX_REVIEW_LENGTH — kept for older callers/tests */
+export function maxReviewLength(_keywordCount?: number) {
+  return MAX_REVIEW_LENGTH;
 }
 
-/** Drop drafts that invent shop/product/service names, AI fluff, or blow length caps. */
+export function minReviewLength(_keywordCount?: number) {
+  return MIN_REVIEW_LENGTH;
+}
+
+/** Drop drafts that invent shop/product/service names, AI fluff, or leave the 90–180 window. */
 export function filterReviewDrafts(drafts: string[], businessName: string, keywords: string[]): string[] {
   const name = (businessName || '').trim().toLowerCase();
   const kwList = keywords.map((k) => String(k || '').trim()).filter(Boolean);
   const kwJoined = kwList.map((k) => k.toLowerCase()).join(' ');
-  const maxLen = maxReviewLength(kwList.length || 1);
   const out: string[] = [];
 
   for (const raw of drafts) {
-    const text = String(raw || '').replace(/\s+/g, ' ').trim();
+    let text = String(raw || '').replace(/\s+/g, ' ').trim();
     if (!text) continue;
     const lower = text.toLowerCase();
     if (name && name.length > 1 && lower.includes(name)) continue;
@@ -587,10 +615,10 @@ export function filterReviewDrafts(drafts: string[], businessName: string, keywo
     if (keywordPastedTooOften(text, kwList)) continue;
     if (personifiedKeyword(text, kwList)) continue;
     if (awkwardTheKeywordOpening(text, kwList)) continue;
-    if (text.length > maxLen + 20) continue;
-    const clipped = text.length > maxLen ? text.slice(0, maxLen).replace(/\s+\S*$/, '').trim() : text;
-    if (clipped.length < 8) continue;
-    out.push(clipped);
+    if (text.length > MAX_REVIEW_LENGTH + 40) continue;
+    text = fitReviewLength(text);
+    if (text.length < MIN_REVIEW_LENGTH || text.length > MAX_REVIEW_LENGTH) continue;
+    out.push(text);
     if (out.length >= 3) break;
   }
   return out;

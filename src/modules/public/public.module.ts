@@ -154,7 +154,7 @@ export class PublicService {
                 '5. Never mention business name, service names, product names, or dish names.',
                 '6. Never invent customer experiences or extra details beyond the keywords.',
                 '7. Avoid generic lines like "overall experience" or "everything was good".',
-                '8. Length: 1 keyword under 100 chars; 2-3 keywords 100-180 chars. If thin, keep very short.',
+                '8. Length: EVERY draft must be 90 to 180 characters (inclusive), whether 1 keyword or 2-3 keywords. Count characters carefully.',
                 '9. Avoid repetitive patterns, formal language, marketing words, and star ratings.',
                 '10. Never use emojis or emoticons. No headings, explanations, quotation marks, or hashtags.',
                 'Business category is context only — write a review that fits that category (food place vs salon vs clinic vs retail), but do NOT paste the category name or shop name into the draft.',
@@ -169,7 +169,8 @@ export class PublicService {
               content: [
                 `Business category: ${categoryLabel}.`,
                 `Selected keywords: ${list.join(', ')}. Count: ${n}.`,
-                'Generate 3 short Hinglish review drafts that fit this category and only these keyword ideas.',
+                'Generate 3 Hinglish review drafts that fit this category and only these keyword ideas.',
+                'Each draft length must be 90-180 characters.',
                 'Paraphrase — do not dump the exact keyword phrase into the line.',
                 'No shop name. No invented dishes, services, menu, appointments, or products.',
               ].join(' '),
