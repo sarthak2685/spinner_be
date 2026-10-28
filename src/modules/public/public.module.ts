@@ -4,7 +4,7 @@ import type { QueryResultRow } from 'pg';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseService } from '../../database/database.module';
 import { loadConfig } from '../../config/env';
-import { fallbackReviews, reviewKeywords } from '../../common/utils/reviews.util';
+import { fallbackReviews, filterReviewDrafts, reviewKeywords } from '../../common/utils/reviews.util';
 import { findBusinessByPlace } from '../../common/utils/place.util';
 import { assertShopOpen } from '../../common/utils/term.util';
 import { isValidEmail, isValidMobile, normalizeMobile } from '../../common/utils/validation.util';
@@ -115,39 +115,57 @@ export class PublicService {
     const business = hub.business as { businessname: string; googlereviewurl?: string };
     const fromBody = (body.keywords || []).map((word) => String(word || '').trim()).filter(Boolean);
     const keywords = (fromBody.length ? fromBody : hub.keywords).slice(0, 3);
-    const reviews = await this.askGroq(business.businessname, keywords, body.customerName || '');
-    const safe = (Array.isArray(reviews) && reviews.length ? reviews : fallbackReviews(business.businessname, keywords)).slice(0, 3);
-    return { reviews: safe, googleReviewUrl: business.googlereviewurl || '', keywords };
+    const raw = await this.askGroq(business.businessname, keywords);
+    const filtered = filterReviewDrafts(Array.isArray(raw) ? raw : [], business.businessname, keywords);
+    const pad = fallbackReviews(business.businessname, keywords);
+    // If Groq mostly invents / fluff, prefer safe Hinglish banks.
+    const mixed = filtered.length >= 2
+      ? [...filtered, ...pad]
+      : pad;
+    const safe = mixed.filter((line, i, arr) => line && arr.indexOf(line) === i).slice(0, 3);
+    return { reviews: safe.length ? safe : pad.slice(0, 3), googleReviewUrl: business.googlereviewurl || '', keywords };
   }
 
-  private async askGroq(businessName: string, keywords: string[], customerName: string) {
+  private async askGroq(businessName: string, keywords: string[]) {
     const key = loadConfig().groqApiKey;
     if (!key) return fallbackReviews(businessName, keywords);
+    const list = keywords.length ? keywords : ['great visit'];
+    const n = list.length;
     try {
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
         body: JSON.stringify({
           model: 'openai/gpt-oss-20b',
-          temperature: 0.85,
+          temperature: 0.45,
           response_format: { type: 'json_object' },
           messages: [
             {
               role: 'system',
-              content:
-                'Return only JSON: {"reviews":["...","...","..."]}. Each string is a short Google review (1–3 sentences). No markdown.',
+              content: [
+                'Return only JSON: {"reviews":["draft1","draft2","draft3"]}. No markdown.',
+                'Each draft is simple conversational Hinglish (Hindi+English mix), plain text.',
+                'No emojis, emoticons, hashtags, quotes, or headings.',
+                'Informal human tone; casual grammar OK; not polished, robotic, or marketing.',
+                'Focus only on the feel of the given keywords; do not invent extra story.',
+                'Never mention a business name.',
+                'Never invent service, product, dish, hair, cut, facial, massage, food, or drink names unless that exact word is one of the keywords.',
+                'Do not paste the keyword phrase as-is. Paraphrase (e.g. skilled stylist -> "haath steady / kaam clean tha").',
+                'Do not start with "The" + keyword. Do not repeat the same keyword phrase twice in one draft.',
+                'Banned fluff: thanks to, totally satisfied, perfect, highly recommend, overall experience, everything was good, must visit, star ratings.',
+                `Length: 1 keyword prefer 40–80 chars (hard max 100); 2–3 keywords 80–160 (hard max 180). Keep short.`,
+                'Three distinct drafts, different openings, same rules.',
+              ].join(' '),
             },
             {
               role: 'user',
               content: [
-                `Write 3 short Google reviews for "${businessName}".`,
-                `Keywords: ${keywords.join(', ') || 'great visit'}.`,
-                keywords.length > 1
-                  ? 'Each review must focus mainly on a different keyword from that list.'
-                  : 'All three must centre on that keyword but use different openings, details, and closings.',
-                'Do not reuse the same first five words across the three reviews.',
-                'Sound like a real customer. Include the business name. Do not invent guest names.',
-                customerName ? `The guest is ${customerName}.` : 'Do not invent a guest name.',
+                `Keywords: ${list.join(', ')}. Count: ${n}.`,
+                'Write 3 different short Hinglish review drafts about only these ideas.',
+                'No shop name. No invented haircut/dish/service details.',
+                n > 1
+                  ? 'Weave the ideas naturally without dumping the exact keyword text.'
+                  : 'Centre on that one idea with three different casual wordings.',
               ].join(' '),
             },
           ],

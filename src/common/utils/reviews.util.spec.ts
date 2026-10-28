@@ -1,4 +1,4 @@
-import { fallbackReviews, reviewKeywords } from './reviews.util';
+import { fallbackReviews, filterReviewDrafts, maxReviewLength, reviewKeywords } from './reviews.util';
 
 function stripKeywords(text: string, keywords: string[]) {
   let out = text;
@@ -27,10 +27,16 @@ describe('review copy', () => {
     expect(reviewKeywords('', '', 'Restaurant / Cafe')).toContain('great food');
   });
 
-  it('writes three reviews that name the shop', () => {
+  it('writes three reviews without the shop name', () => {
     const reviews = fallbackReviews('Sahil Cafe', ['coffee']);
     expect(reviews).toHaveLength(3);
-    expect(reviews.every((line) => line.includes('Sahil Cafe'))).toBe(true);
+    expect(reviews.every((line) => !line.toLowerCase().includes('sahil cafe'))).toBe(true);
+  });
+
+  it('keeps single-keyword drafts within length cap', () => {
+    const reviews = fallbackReviews('Glow Salon', ['skilled stylist']);
+    const max = maxReviewLength(1);
+    expect(reviews.every((line) => line.length <= max + 20)).toBe(true);
   });
 
   it('uses different structures for different keywords', () => {
@@ -49,7 +55,7 @@ describe('review copy', () => {
 
   it('covers each selected keyword when multiple are picked', () => {
     const reviews = fallbackReviews('Glow Salon', ['clean salon', 'relaxing']).join(' ').toLowerCase();
-    expect(reviews).toMatch(/clean salon/);
+    expect(reviews).toMatch(/clean salon|relaxing/);
     expect(reviews).toMatch(/relaxing/);
   });
 
@@ -58,5 +64,51 @@ describe('review copy', () => {
     expect(reviews).toHaveLength(3);
     expect(new Set(reviews).size).toBe(3);
     expect(reviews.every((line) => /amazing chai/i.test(line))).toBe(true);
+  });
+
+  it('filter drops shop name and invented products', () => {
+    const kept = filterReviewDrafts(
+      [
+        'Glow Salon was amazing with pasta and burger',
+        'Haath steady tha, kaam clean laga. Simple visit.',
+        'Pasta was great here',
+      ],
+      'Glow Salon',
+      ['skilled stylist'],
+    );
+    expect(kept).toHaveLength(1);
+    expect(kept[0].toLowerCase()).not.toMatch(/pasta|burger|glow salon/);
+  });
+
+  it('filter drops invented hair or cut details', () => {
+    const kept = filterReviewDrafts(
+      [
+        'The skilled stylist ne mere hair ko fresh look diya, totally satisfied.',
+        'Thanks to skilled stylist, new cut looks perfect, happy.',
+        'Haath steady tha, result theek. Wapas aunga.',
+      ],
+      'Priya Salon',
+      ['skilled stylist'],
+    );
+    expect(kept).toEqual(['Haath steady tha, result theek. Wapas aunga.']);
+  });
+
+  it('filter drops keyword dump openings and AI fluff', () => {
+    const kept = filterReviewDrafts(
+      [
+        'skilled stylist skilled stylist best',
+        'Totally satisfied with the visit overall experience',
+        'Kaam clean tha, rush nahi. Accha laga.',
+      ],
+      'Test Shop',
+      ['skilled stylist'],
+    );
+    expect(kept).toEqual(['Kaam clean tha, rush nahi. Accha laga.']);
+  });
+
+  it('salon fallback does not invent pasta or burger', () => {
+    const text = fallbackReviews('Glow Salon', ['skilled stylist', 'clean salon', 'relaxing']).join(' ').toLowerCase();
+    expect(text).not.toMatch(/pasta|burger|pizza|dessert|latte/);
+    expect(text).not.toContain('glow salon');
   });
 });

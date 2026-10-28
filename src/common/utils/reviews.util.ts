@@ -47,7 +47,8 @@ export function reviewKeywords(raw?: string | null, tagline?: string | null, bus
   return typed;
 }
 
-type ReviewTemplate = (name: string, kw: string) => string;
+/** Keyword-only Hinglish templates — no shop / product / dish names. */
+type ReviewTemplate = (kw: string) => string;
 
 function normalizeKw(word: string) {
   return word.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -59,200 +60,199 @@ function hashSeed(input: string) {
   return Math.abs(h);
 }
 
-/** Structurally different templates for owner-defined / unknown keywords. */
 const UNKNOWN_BANK: ReviewTemplate[] = [
-  (name, kw) => `${name} exceeded my expectations. What stood out most was how ${kw} everything felt. Will definitely return!`,
-  (name, kw) => `I had a great experience at ${name}. Truly ${kw}, and I would recommend it without hesitation.`,
-  (name, kw) => `${name} is a hidden gem. The visit felt ${kw} from start to finish, and I left happy.`,
-  (name, kw) => `Impressed by ${name}. Guests notice the ${kw} vibe right away — that is why I am coming back.`,
-  (name, kw) => `Glad I chose ${name}. ${kw.charAt(0).toUpperCase()}${kw.slice(1)} made the whole visit feel worthwhile.`,
-  (name, kw) => `Solid visit to ${name}. If you care about ${kw}, you will feel the same way I did.`,
+  (kw) => `${kw} wali feeling thi, simple aur genuine. Wapas aunga.`,
+  (kw) => `Bina bakwas ke ${kw} mila. Bilkul theek laga.`,
+  (kw) => `Jo chahiye tha wahi — ${kw}. Short visit, khush.`,
+  (kw) => `${kw} pe focus clear tha. Zyada kuch nahi chahiye tha.`,
+  (kw) => `Honestly ${kw} hi yaad rahega. Baaki chill.`,
+  (kw) => `Thoda ${kw}, thoda easy vibe. Kaafi tha mere liye.`,
 ];
 
 const FRIENDLY_STAFF: ReviewTemplate[] = [
-  (name) => `The team at ${name} made me feel welcome from the door. Friendly staff, clear help, and a visit I would gladly repeat.`,
-  (name) => `I keep coming back to ${name} because the friendly staff remember small details and never rush you.`,
-  (name) => `${name} has warm, friendly staff who check in without hovering. That alone made my day better.`,
+  () => `Staff friendly tha, baat seedhi. Tension nahi li.`,
+  () => `Friendly staff ne casually help ki. Feel good.`,
+  () => `Log friendly the, rush nahi. Simple visit.`,
 ];
 
 const HELPFUL_STAFF: ReviewTemplate[] = [
-  (name) => `Needed help finding the right option at ${name} and the helpful staff sorted it in minutes. Easy win.`,
-  (name) => `${name} stands out for helpful staff who explain choices without pressure. Left confident in what I picked.`,
-  (name) => `Quick questions, clear answers — the helpful staff at ${name} turned a chore into a smooth stop.`,
+  () => `Helpful staff ne jaldi samjha diya. Easy ho gaya.`,
+  () => `Sawal poocha, helpful jawab mila. No drama.`,
+  () => `Staff helpful tha bina pressure ke. Theek raha.`,
 ];
 
 const CARING_STAFF: ReviewTemplate[] = [
-  (name) => `Felt looked after at ${name}. Caring staff listened carefully and never made me feel rushed.`,
-  (name) => `${name} has caring staff who explain every step. That kindness made a real difference.`,
-  (name) => `Calm, caring staff at ${name} put me at ease right away. Highly recommend for anyone nervous about visits.`,
+  () => `Caring staff, dheere se baat ki. Comfortable feel.`,
+  () => `Staff caring laga, rush nahi kiya. Sukoon.`,
+  () => `Caring log the, patiently sun liya. Accha laga.`,
 ];
 
 const SKILLED_STYLIST: ReviewTemplate[] = [
-  (name) => `Booked ${name} for a cut and the skilled stylist nailed the shape I wanted. Left looking sharper than expected.`,
-  (name) => `The skilled stylist at ${name} took time to understand my hair and delivered exactly that — no guesswork.`,
-  (name) => `${name} is my go-to now. Skilled stylist, steady hands, and a finish that lasted all week.`,
+  () => `Skilled stylist ne samajh ke kaam kiya. Result theek.`,
+  () => `Stylist skilled tha, guesswork nahi. Happy.`,
+  () => `Skilled stylist, haath steady. Jo bola wahi.`,
 ];
 
 const GOOD_TRAINERS: ReviewTemplate[] = [
-  (name) => `Sessions at ${name} actually push me. Good trainers correct form and keep the pace honest.`,
-  (name) => `The good trainers at ${name} tailor drills to my level instead of a one-size plan. Progress feels real.`,
-  (name) => `${name} clicked for me because of good trainers who motivate without shouting. Consistent and clear.`,
+  () => `Good trainers ne form theek kiya. Progress feel.`,
+  () => `Trainers good the, shout nahi, clear tips.`,
+  () => `Good trainers, level ke hisaab se. Solid.`,
 ];
 
 const GREAT_FOOD: ReviewTemplate[] = [
-  (name) => `${name} served great food with bold flavour and generous portions. Already planning my next order.`,
-  (name) => `Cravings sorted at ${name}. Great food, hot when it arrived, and seasoning that actually hits.`,
-  (name) => `If you want great food without fuss, ${name} delivers. Every plate on our table disappeared fast.`,
+  () => `Great food, flavour theek tha. Next time bhi.`,
+  () => `Food great laga, garam aur simple. Sorted.`,
+  () => `Great food bina fuss ke. Plate khali.`,
 ];
 
 const TASTY: ReviewTemplate[] = [
-  (name) => `Every bite at ${name} was tasty — balanced spice, fresh finish, zero leftovers.`,
-  (name) => `${name} surprised me with how tasty the specials were. Comfort food done right.`,
-  (name) => `Took friends to ${name} and everyone called the food tasty. That is a rare unanimous vote.`,
+  () => `Tasty tha, balance accha. Leftover zero.`,
+  () => `Honestly tasty specials. Comfort wali feeling.`,
+  () => `Sabne bola tasty. Rare unanimous vote.`,
 ];
 
 const FRESH: ReviewTemplate[] = [
-  (name) => `You can taste how fresh everything is at ${name}. Crisp greens, clean flavours, no heaviness.`,
-  (name) => `${name} keeps ingredients fresh — the difference shows in every dish. Will order again.`,
-  (name) => `Stopped at ${name} craving something light and fresh. Left satisfied, not stuffed.`,
+  () => `Fresh feel tha, light aur clean taste.`,
+  () => `Ingredients fresh lage. Difference dikhta hai.`,
+  () => `Light aur fresh chahiye tha, mila. Satisfied.`,
 ];
 
 const QUICK_SERVICE: ReviewTemplate[] = [
-  (name) => `In and out of ${name} with quick service and still felt looked after. Perfect on a busy day.`,
-  (name) => `${name} runs quick service without cutting corners. Order ready when they said, smile included.`,
-  (name) => `Appreciated the quick service at ${name}. No long wait, no confusion at the counter.`,
+  () => `Quick service, busy day pe perfect.`,
+  () => `Service quick thi, corners cut nahi. Smile bhi.`,
+  () => `Quick service, wait nahi. Counter pe clear.`,
 ];
 
 const CLEAN_PLACE: ReviewTemplate[] = [
-  (name) => `${name} stays visibly clean — tables, floors, and washrooms. That care makes you trust the rest.`,
-  (name) => `Walked into ${name} and noticed how clean the place felt. Easy to settle in and enjoy the visit.`,
-  (name) => `A clean place matters to me, and ${name} delivers. Spotless seating and tidy counters throughout.`,
+  () => `Clean place, tables floors theek. Trust ban gaya.`,
+  () => `Clean feel andar aate hi. Settle ho gaya.`,
+  () => `Clean place matter karta hai, yahan mila.`,
 ];
 
 const CLEAN_SALON: ReviewTemplate[] = [
-  (name) => `${name} keeps a clean salon — stations wiped, tools sorted, no clutter. Felt safe getting my hair done.`,
-  (name) => `Clean salon vibes at ${name}. Capes fresh, floors clear, and the chair area always reset between guests.`,
-  (name) => `I trust ${name} because it is a clean salon from the mirror to the wash basin. Details done right.`,
+  () => `Clean salon, stations wipe, tools sorted. Safe feel.`,
+  () => `Salon clean tha, floors clear. Fresh vibe.`,
+  () => `Clean salon details theek. Mirror se basin tak.`,
 ];
 
 const CLEAN_GYM: ReviewTemplate[] = [
-  (name) => `${name} is a clean gym — equipment wiped, floors dry, lockers usable. Focus stays on the workout.`,
-  (name) => `Clean gym standards at ${name} are better than most. Mats and benches actually look maintained.`,
-  (name) => `Appreciate that ${name} runs a clean gym even at peak hour. No excuses, just good habits.`,
+  () => `Clean gym, floors dry, lockers usable. Focus raha.`,
+  () => `Gym clean standards acchi. Mats maintained.`,
+  () => `Peak pe bhi clean gym. Habits dikhti hain.`,
 ];
 
 const CLEAN_CLINIC: ReviewTemplate[] = [
-  (name) => `${name} feels like a clean clinic should — tidy rooms, calm waiting area, no clutter. Instantly reassuring.`,
-  (name) => `Clean clinic standards at ${name} stood out. Surfaces wiped, staff gloved, process clear.`,
-  (name) => `Took family to ${name} and valued the clean clinic environment as much as the care itself.`,
+  () => `Clean clinic feel, waiting calm. Reassuring.`,
+  () => `Clinic clean, process clear. Tension kam.`,
+  () => `Clean clinic environment. Care ke saath matter.`,
 ];
 
 const HYGIENIC: ReviewTemplate[] = [
-  (name) => `${name} takes hygienic practice seriously — tools sanitised, stations reset, no shortcuts.`,
-  (name) => `Felt confident at ${name} because everything looked hygienic and organised. That peace of mind matters.`,
-  (name) => `Hygienic from check-in to finish at ${name}. Exactly what you want when you are in the chair.`,
+  () => `Hygienic practice, tools sanitised. Shortcuts nahi.`,
+  () => `Hygienic aur organised. Peace of mind.`,
+  () => `Check-in se finish tak hygienic. Wahi chahiye.`,
 ];
 
 const RELAXING: ReviewTemplate[] = [
-  (name) => `${name} is genuinely relaxing — soft lights, calm pace, and space to breathe. Left lighter than I arrived.`,
-  (name) => `Needed a break and ${name} delivered a relaxing hour. No rush, no noise overload.`,
-  (name) => `The vibe at ${name} is relaxing without feeling sleepy. Perfect reset mid-week.`,
+  () => `Relaxing tha, soft pace. Lighter feel.`,
+  () => `Break chahiye tha, relaxing hour mila. No rush.`,
+  () => `Relaxing vibe, sleepy nahi. Mid-week reset.`,
 ];
 
 const COMFORTABLE: ReviewTemplate[] = [
-  (name) => `${name} feels comfortable the moment you sit down — seating, temperature, and pace all work.`,
-  (name) => `Long visit at ${name} still felt comfortable. No awkward wait, no stiff chairs.`,
-  (name) => `Comfortable space and easy flow at ${name}. I did not check the clock once.`,
+  () => `Comfortable baithte hi. Pace theek.`,
+  () => `Lambi visit bhi comfortable. Wait awkward nahi.`,
+  () => `Comfortable space, clock check nahi kiya.`,
 ];
 
 const GOOD_VALUE: ReviewTemplate[] = [
-  (name) => `${name} is good value — quality matches the price, and nothing feels padded on the bill.`,
-  (name) => `Paid fair money at ${name} and got good value back. Would rather spend here than elsewhere.`,
-  (name) => `Good value without cutting quality at ${name}. That balance is hard to find.`,
+  () => `Good value, price ke hisaab se quality. Bill clean.`,
+  () => `Fair spend, good value wapas. Prefer yahi.`,
+  () => `Good value bina quality cut. Hard to find.`,
 ];
 
 const FAIR_PRICE: ReviewTemplate[] = [
-  (name) => `Fair price for solid quality at ${name}. No surprise add-ons, just a clear bill.`,
-  (name) => `${name} keeps a fair price while still feeling premium. Happy to recommend on cost alone.`,
-  (name) => `Compared a few places and ${name} won on fair price plus consistent results.`,
+  () => `Fair price, solid quality. Surprise add-on nahi.`,
+  () => `Fair price pe premium feel. Cost pe recommend.`,
+  () => `Compare kiya, fair price plus consistent. Won.`,
 ];
 
 const WORTH_VISITING: ReviewTemplate[] = [
-  (name) => `${name} is worth visiting if you want a reliable, pleasant stop. I already told two friends.`,
-  (name) => `Made time for ${name} and it was worth visiting — better than the reviews suggested.`,
-  (name) => `Short version: ${name} is worth visiting. Clear strengths, no drama, happy to return.`,
+  () => `Worth visiting, reliable stop. Doost ko bata diya.`,
+  () => `Time nikaala, worth visiting. Reviews se better.`,
+  () => `Short: worth visiting. Clear strengths, no drama.`,
 ];
 
 const WORTH_JOINING: ReviewTemplate[] = [
-  (name) => `${name} is worth joining if you want structure and accountability. Membership already paying off.`,
-  (name) => `Tried a few gyms; ${name} is worth joining for the coaching and floor culture alone.`,
-  (name) => `Honest take: ${name} is worth joining. Clean space, clear plans, people who show up.`,
+  () => `Worth joining, structure milta hai. Paying off.`,
+  () => `Kuch try kiye, worth joining coaching ke liye.`,
+  () => `Honest: worth joining. Clean space, clear plans.`,
 ];
 
 const ON_TIME: ReviewTemplate[] = [
-  (name) => `${name} ran on time — appointment started when booked, finished without a scramble.`,
-  (name) => `Rare these days: ${name} stayed on time and still gave full attention. Respect for the clock.`,
-  (name) => `Booked ${name} tight between errands and they were on time. That reliability keeps me loyal.`,
+  () => `On time chala, booked pe start. Scramble nahi.`,
+  () => `Rare: on time plus full attention. Respect.`,
+  () => `Tight schedule pe on time. Loyalty isi se.`,
 ];
 
 const GENTLE: ReviewTemplate[] = [
-  (name) => `Treatment at ${name} felt gentle without being ineffective. Comfortable the whole way through.`,
-  (name) => `${name} uses a gentle approach that still gets results. Ideal if you dislike harsh handling.`,
-  (name) => `Appreciated how gentle the team at ${name} was — careful, patient, and clear about each step.`,
+  () => `Gentle feel, ineffective nahi. Comfortable raha.`,
+  () => `Gentle approach, results bhi. Harsh nahi.`,
+  () => `Team gentle thi, patient. Har step clear.`,
 ];
 
 const PROFESSIONAL: ReviewTemplate[] = [
-  (name) => `${name} exceeded my expectations. The service was professional and the whole visit felt polished. Will definitely return!`,
-  (name) => `I had a great experience at ${name}. Staff were professional and attentive, and nothing felt rushed.`,
-  (name) => `${name} is a hidden gem. Cozy vibe, solid work, and a professional attitude from start to finish.`,
+  () => `Professional vibe, polished feel. Wapas aunga.`,
+  () => `Staff professional, attentive. Rush nahi.`,
+  () => `Professional attitude start se finish. Solid.`,
 ];
 
 const CLEAR_ADVICE: ReviewTemplate[] = [
-  (name) => `${name} gave clear advice I could actually follow — no jargon, just next steps that made sense.`,
-  (name) => `Left ${name} with clear advice and a simple plan. That clarity alone was worth the visit.`,
-  (name) => `Questions answered with clear advice at ${name}. Felt informed, not overwhelmed.`,
+  () => `Clear advice, jargon nahi. Next steps simple.`,
+  () => `Clear advice aur plan. Clarity worth it.`,
+  () => `Clear advice pe sawal khatam. Informed feel.`,
 ];
 
 const EASY_BOOKING: ReviewTemplate[] = [
-  (name) => `Easy booking at ${name} — slotted a time, got confirmation, showed up without chase messages.`,
-  (name) => `${name} makes easy booking feel normal. Reschedule was just as simple when plans changed.`,
-  (name) => `From booking to visit, ${name} kept it easy. No phone tag, no confusion at the desk.`,
+  () => `Easy booking, slot confirm, chase nahi.`,
+  () => `Booking easy, reschedule bhi simple.`,
+  () => `Booking se visit easy. Desk pe confusion nahi.`,
 ];
 
 const WELL_EQUIPPED: ReviewTemplate[] = [
-  (name) => `${name} is well equipped — enough stations that I never waited on a machine I needed.`,
-  (name) => `Well equipped floor at ${name} with gear that actually works. Training stays efficient.`,
-  (name) => `Tried ${name} because it is well equipped for both strength and cardio. Lived up to that.`,
+  () => `Well equipped, machine wait nahi. Efficient.`,
+  () => `Floor well equipped, gear kaam karta hai.`,
+  () => `Well equipped strength cardio. Expectation match.`,
 ];
 
 const MOTIVATING: ReviewTemplate[] = [
-  (name) => `${name} has a motivating energy without the bro-shouting. Left wanting the next session.`,
-  (name) => `Motivating coaches and music at ${name} keep effort honest. Hard days still feel doable.`,
-  (name) => `Need a push? ${name} is motivating in the right way — support first, ego second.`,
+  () => `Motivating energy, shout nahi. Next session chahiye.`,
+  () => `Motivating coaches, effort honest. Hard day doable.`,
+  () => `Push chahiye? Motivating right way. Support first.`,
 ];
 
 const GOOD_QUALITY: ReviewTemplate[] = [
-  (name) => `Bought from ${name} and the good quality shows after weeks of use. No cheap feel.`,
-  (name) => `${name} stocks good quality pieces you can trust. Happy with both look and finish.`,
-  (name) => `Good quality at a sensible price from ${name}. Will shop here before the mall next time.`,
+  () => `Good quality, weeks baad bhi theek. Cheap feel nahi.`,
+  () => `Good quality pieces, look finish dono ok.`,
+  () => `Good quality sensible price. Mall se pehle yahi.`,
 ];
 
 const NEAT_STORE: ReviewTemplate[] = [
-  (name) => `${name} is a neat store — aisles clear, displays tidy, easy to find what you need.`,
-  (name) => `Love how neat the store feels at ${name}. Shopping stays calm instead of chaotic.`,
-  (name) => `Neat store layout at ${name} made browsing quick. Found my pick without hunting.`,
+  () => `Neat store, aisles clear. Easy find.`,
+  () => `Store neat, shopping calm. Chaos nahi.`,
+  () => `Neat layout, browsing quick. Hunting nahi.`,
 ];
 
 const GOOD_RANGE: ReviewTemplate[] = [
-  (name) => `${name} has a good range — enough options without drowning you in clutter.`,
-  (name) => `Needed variety and ${name} delivered a good range in one stop. Saved a second trip.`,
-  (name) => `Good range plus honest guidance at ${name}. Left with the right pick, not a random one.`,
+  () => `Good range, options kaafi, clutter nahi.`,
+  () => `Variety chahiye thi, good range ek stop.`,
+  () => `Good range plus honest tip. Right pick.`,
 ];
 
 const EASY_CHECKOUT: ReviewTemplate[] = [
-  (name) => `Easy checkout at ${name} — bill clear, payment fast, no last-minute surprises.`,
-  (name) => `${name} keeps easy checkout even when the floor is busy. Appreciated the short line.`,
-  (name) => `From cart to bag in minutes at ${name}. Easy checkout is underrated and they nail it.`,
+  () => `Easy checkout, bill clear, payment fast.`,
+  () => `Busy pe bhi easy checkout. Line short.`,
+  () => `Cart se bag jaldi. Easy checkout nail.`,
 ];
 
 const KEYWORD_BANKS: Record<string, ReviewTemplate[]> = {
@@ -289,7 +289,6 @@ const KEYWORD_BANKS: Record<string, ReviewTemplate[]> = {
   'easy checkout': EASY_CHECKOUT,
 };
 
-/** Cleanliness aliases share family wording but keep type-specific banks above when exact key exists. */
 const ALIASES: Record<string, string> = {
   clean: 'clean place',
   cleanliness: 'clean place',
@@ -304,19 +303,18 @@ function resolveBank(keyword: string): { bank: ReviewTemplate[]; kw: string } {
   return { bank: UNKNOWN_BANK, kw: keyword.trim() || kw };
 }
 
-function pickThree(bank: ReviewTemplate[], name: string, kw: string, seed: number): string[] {
+function pickThree(bank: ReviewTemplate[], kw: string, seed: number): string[] {
   const n = bank.length;
   const start = seed % n;
   const out: string[] = [];
   for (let i = 0; i < 3; i += 1) {
-    out.push(bank[(start + i) % n](name, kw));
+    out.push(bank[(start + i) % n](kw));
   }
   return out;
 }
 
 /**
- * Food Bites / PHP-style fallback: each keyword uses its own review bank
- * so drafts differ in structure, not only the inserted phrase.
+ * Offline / Groq-fail fallback: keyword banks only — no business name in copy.
  */
 export function fallbackReviews(businessName: string, keywords: string[]) {
   const name = (businessName || 'this place').trim() || 'this place';
@@ -324,19 +322,19 @@ export function fallbackReviews(businessName: string, keywords: string[]) {
   const seed = hashSeed(`${name}|${picked.join('|')}`);
 
   if (picked.length === 0) {
-    return pickThree(UNKNOWN_BANK, name, 'service', seed);
+    return pickThree(UNKNOWN_BANK, 'service', seed);
   }
 
   if (picked.length === 1) {
     const { bank, kw } = resolveBank(picked[0]);
-    return pickThree(bank, name, kw, seed);
+    return pickThree(bank, kw, seed);
   }
 
   const reviews: string[] = [];
   picked.forEach((word, index) => {
     const { bank, kw } = resolveBank(word);
     const template = bank[(seed + index) % bank.length];
-    reviews.push(template(name, kw));
+    reviews.push(template(kw));
   });
 
   if (reviews.length === 2) {
@@ -344,14 +342,102 @@ export function fallbackReviews(businessName: string, keywords: string[]) {
     const second = bank[(seed + 1) % bank.length];
     const first = bank[seed % bank.length];
     const extra = second === first && bank.length > 1 ? bank[(seed + 2) % bank.length] : second;
-    // Prefer a different template than the first review for the same keyword.
     const already = reviews[0];
-    let candidate = extra(name, kw);
+    let candidate = extra(kw);
     if (candidate === already && bank.length > 2) {
-      candidate = bank[(seed + 3) % bank.length](name, kw);
+      candidate = bank[(seed + 3) % bank.length](kw);
     }
     reviews.push(candidate);
   }
 
   return reviews.slice(0, 3);
+}
+
+/** Concrete service/product/dish words models invent — reject unless the guest picked that word. */
+const INVENTED_TERMS = [
+  // food / drink
+  'pasta', 'burger', 'pizza', 'dessert', 'latte', 'cappuccino', 'sushi', 'biryani',
+  'momos', 'noodles', 'steak', 'sandwich', 'waffle', 'smoothie', 'cocktail', 'chai',
+  'coffee', 'thali', 'samosa', 'dosa', 'idli', 'paneer', 'chicken', 'mutton',
+  // salon / spa
+  'hair', 'haircut', 'hair cut', 'new cut', 'fresh look', 'facial', 'massage',
+  'manicure', 'pedicure', 'wax', 'bleach', 'highlights', 'keratin', 'spa package',
+  // clinic / gym
+  'injection', 'surgery', 'x-ray', 'xray', 'treadmill', 'deadlift', 'protein shake',
+];
+
+const AI_FLUFF = [
+  /totally satisfied/i,
+  /highly recommend/i,
+  /thanks to\b/i,
+  /overall experience/i,
+  /everything was (good|great|amazing)/i,
+  /\b(must visit|must try)\b/i,
+  /\b(5|five)[\s-]?star/i,
+  /\bperfect\b/i,
+  /\bamazing experience\b/i,
+  /\bwill definitely (return|come back)\b/i,
+];
+
+function escapeRe(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function hasInventedTerm(text: string, keywordsJoined: string) {
+  const lower = text.toLowerCase();
+  return INVENTED_TERMS.some((term) => {
+    if (keywordsJoined.includes(term)) return false;
+    if (term.includes(' ')) return lower.includes(term);
+    return new RegExp(`\\b${escapeRe(term)}\\b`, 'i').test(text);
+  });
+}
+
+function keywordPastedTooOften(text: string, keywords: string[]) {
+  const lower = text.toLowerCase();
+  return keywords.some((kw) => {
+    const phrase = kw.trim().toLowerCase();
+    if (phrase.length < 3) return false;
+    const re = new RegExp(escapeRe(phrase), 'gi');
+    const hits = lower.match(re);
+    return (hits?.length || 0) >= 2;
+  });
+}
+
+function awkwardKeywordOpening(text: string, keywords: string[]) {
+  const lower = text.toLowerCase().trim();
+  return keywords.some((kw) => {
+    const phrase = kw.trim().toLowerCase();
+    if (!phrase) return false;
+    return lower.startsWith(`the ${phrase}`) || lower.startsWith(phrase);
+  });
+}
+
+export function maxReviewLength(keywordCount: number) {
+  return keywordCount <= 1 ? 100 : 180;
+}
+
+/** Drop drafts that invent shop/product/service names, AI fluff, or blow length caps. */
+export function filterReviewDrafts(drafts: string[], businessName: string, keywords: string[]): string[] {
+  const name = (businessName || '').trim().toLowerCase();
+  const kwList = keywords.map((k) => String(k || '').trim()).filter(Boolean);
+  const kwJoined = kwList.map((k) => k.toLowerCase()).join(' ');
+  const maxLen = maxReviewLength(kwList.length || 1);
+  const out: string[] = [];
+
+  for (const raw of drafts) {
+    const text = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    const lower = text.toLowerCase();
+    if (name && name.length > 1 && lower.includes(name)) continue;
+    if (hasInventedTerm(text, kwJoined)) continue;
+    if (AI_FLUFF.some((re) => re.test(text))) continue;
+    if (keywordPastedTooOften(text, kwList)) continue;
+    if (awkwardKeywordOpening(text, kwList)) continue;
+    if (text.length > maxLen + 20) continue;
+    const clipped = text.length > maxLen ? text.slice(0, maxLen).replace(/\s+\S*$/, '').trim() : text;
+    if (clipped.length < 8) continue;
+    out.push(clipped);
+    if (out.length >= 3) break;
+  }
+  return out;
 }
