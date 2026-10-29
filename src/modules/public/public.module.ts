@@ -18,7 +18,7 @@ import { pipeMedia } from '../../common/utils/media-stream.util';
 import { LandingMediaModule } from '../landing-media/landing-media.module';
 import { LandingMediaService } from '../landing-media/landing-media.service';
 
-type ReviewBody = { token?: string; customerName?: string; keywords?: string[]; rating?: number; body?: string; phone?: string; email?: string; message?: string };
+type ReviewBody = { token?: string; customerName?: string; keywords?: string[]; rating?: number; body?: string; phone?: string; email?: string; message?: string; variety?: number };
 type DemoBody = { name?: string; mobile?: string; email?: string; businessName?: string; businessType?: string; city?: string };
 
 @Injectable()
@@ -117,18 +117,19 @@ export class PublicService {
     const category = String(kind?.typename || kind?.typecode || '').trim() || 'Local business';
     const fromBody = (body.keywords || []).map((word) => String(word || '').trim()).filter(Boolean);
     const keywords = (fromBody.length ? fromBody : hub.keywords).slice(0, 3);
-    const raw = await this.askGroq(business.businessname, keywords, category);
+    const variety = Number(body.variety) || Date.now();
+    const raw = await this.askGroq(business.businessname, keywords, category, variety);
     const filtered = filterReviewDrafts(Array.isArray(raw) ? raw : [], business.businessname, keywords);
-    const pad = fallbackReviews(business.businessname, keywords);
+    const pad = fallbackReviews(business.businessname, keywords, variety);
     // Prefer clean Groq lines; if fewer than 2 survive, use banks only (avoids mixed awkward quality).
     const mixed = filtered.length >= 2 ? [...filtered, ...pad] : pad;
     const safe = mixed.filter((line, i, arr) => line && arr.indexOf(line) === i).slice(0, 3);
     return { reviews: safe.length ? safe : pad.slice(0, 3), googleReviewUrl: business.googlereviewurl || '', keywords, category };
   }
 
-  private async askGroq(businessName: string, keywords: string[], category: string) {
+  private async askGroq(businessName: string, keywords: string[], category: string, variety: number) {
     const key = loadConfig().groqApiKey;
-    if (!key) return fallbackReviews(businessName, keywords);
+    if (!key) return fallbackReviews(businessName, keywords, variety);
     const list = keywords.length ? keywords : ['great visit'];
     const n = list.length;
     const categoryLabel = category || 'Local business';
@@ -138,7 +139,7 @@ export class PublicService {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
         body: JSON.stringify({
           model: 'openai/gpt-oss-20b',
-          temperature: 0.55,
+          temperature: 0.85,
           response_format: { type: 'json_object' },
           messages: [
             {
@@ -149,19 +150,20 @@ export class PublicService {
                 'Each string is one short review draft. Plain text only.',
                 '1. Language: Simple conversational Hinglish only.',
                 '2. Style: Informal, human-like. Casual grammar OK. Occasional minor mistakes OK. Not fixed templates.',
-                '3. Tone: Casual, simple, not polished or robotic.',
+                '3. Tone: Casual, understated, simple — no drama, no hype, no poetic lines.',
                 '4. Keywords: Focus ONLY on the selected keyword ideas. No unrelated details.',
                 '5. Never mention business name, service names, product names, or dish names.',
                 '6. Never invent customer experiences or extra details beyond the keywords.',
-                '7. Avoid generic lines like "overall experience" or "everything was good".',
+                '7. Avoid generic lines like "overall experience", "everything was good", "simple feel thi", "zyada drama nahi".',
                 '8. Length: EVERY draft must be 90 to 180 characters (inclusive), whether 1 keyword or 2-3 keywords. Count characters carefully.',
                 '9. Avoid repetitive patterns, formal language, marketing words, and star ratings.',
                 '10. Never use emojis or emoticons. No headings, explanations, quotation marks, or hashtags.',
+                '11. Each of the 3 drafts must end differently — never reuse the same closing phrase across drafts.',
                 'Business category is context only — write a review that fits that category (food place vs salon vs clinic vs retail), but do NOT paste the category name or shop name into the draft.',
                 'CRITICAL wording: Do NOT paste multi-word keywords as-is into the sentence.',
                 'Paraphrase so the sentence sounds natural (e.g. "great food" -> "khana accha laga"; "friendly staff" -> "log friendly the"; "caring doctor" -> "doctor care se sun liya").',
                 'Never write "{keyword} ne ..." (do not personify the keyword phrase).',
-                'Three distinct drafts, different openings, same rules.',
+                'Three distinct drafts, different openings and endings, same rules.',
               ].join(' '),
             },
             {
@@ -169,7 +171,9 @@ export class PublicService {
               content: [
                 `Business category: ${categoryLabel}.`,
                 `Selected keywords: ${list.join(', ')}. Count: ${n}.`,
+                `Fresh batch id: ${variety}. Write three NEW drafts — different openings, angles, and endings from any prior batch.`,
                 'Generate 3 Hinglish review drafts that fit this category and only these keyword ideas.',
+                'Keep it plain and calm. No catchphrases. No drama.',
                 'Each draft length must be 90-180 characters.',
                 'Paraphrase — do not dump the exact keyword phrase into the line.',
                 'No shop name. No invented dishes, services, menu, appointments, or products.',
@@ -178,14 +182,14 @@ export class PublicService {
           ],
         }),
       });
-      if (!response.ok) return fallbackReviews(businessName, keywords);
+      if (!response.ok) return fallbackReviews(businessName, keywords, variety);
       const data = await response.json() as { choices?: { message?: { content?: string } }[] };
       const parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}') as { reviews?: string[] };
       if (Array.isArray(parsed.reviews) && parsed.reviews.length) return parsed.reviews.slice(0, 3);
     } catch {
-      return fallbackReviews(businessName, keywords);
+      return fallbackReviews(businessName, keywords, variety);
     }
-    return fallbackReviews(businessName, keywords);
+    return fallbackReviews(businessName, keywords, variety);
   }
 
   async saveReview(body: ReviewBody) {

@@ -431,29 +431,53 @@ function pickThree(bank: ReviewTemplate[], kw: string, seed: number): string[] {
   return out;
 }
 
+/** Quiet length pads — never reuse one catchphrase across every draft. */
 const LENGTH_PADS = [
-  ' Simple feel thi, zyada drama nahi.',
-  ' Short visit, mood theek raha.',
-  ' Bina tension ke ho gaya, dil light.',
-  ' Time waste nahi hua, flow clear tha.',
-  ' Wapas aane ka mann hai, honest take.',
+  ' Mood theek raha.',
+  ' Time waste nahi hua.',
+  ' Bina tension ke ho gaya.',
+  ' Dil light raha.',
+  ' Flow clear tha.',
+  ' Short visit, theek laga.',
+  ' Rush nahi feel hua.',
+  ' Expectation match thi.',
+  ' Baaki chill tha.',
+  ' Khush, complaint nahi.',
+  ' Jo chahiye tha wahi mila.',
+  ' Extra fuss nahi hua.',
+  ' Soft pace, accha laga.',
+  ' Wait awkward nahi tha.',
+  ' Seedha kaam, clear feel.',
+  ' Wapas aunga, simple take.',
+  ' Tension zero, vibe soft.',
+  ' Kaafi tha mere liye.',
+  ' Honest: theek raha.',
+  ' Poora time easy feel.',
 ];
 
+const STOCK_CLOSER_RE = /\s*simple feel thi,?\s*zyada drama nahi\.?/gi;
+
 /** Keep drafts in the 90–180 character window (single or multi keyword). */
-export function fitReviewLength(text: string) {
-  let t = String(text || '').replace(/\s+/g, ' ').trim();
+export function fitReviewLength(text: string, variety = 0) {
+  let t = String(text || '').replace(STOCK_CLOSER_RE, ' ').replace(/\s+/g, ' ').trim();
   if (!t) return t;
+  const start = hashSeed(`${t}|${variety}`) % LENGTH_PADS.length;
   let i = 0;
-  while (t.length < MIN_REVIEW_LENGTH && i < 12) {
-    t = `${t}${LENGTH_PADS[i % LENGTH_PADS.length]}`.replace(/\s+/g, ' ').trim();
+  while (t.length < MIN_REVIEW_LENGTH && i < 20) {
+    const pad = LENGTH_PADS[(start + i) % LENGTH_PADS.length];
+    const tip = pad.trim().slice(0, 10).toLowerCase();
+    if (tip && t.toLowerCase().includes(tip)) {
+      i += 1;
+      continue;
+    }
+    t = `${t}${pad}`.replace(/\s+/g, ' ').trim();
     i += 1;
   }
   if (t.length > MAX_REVIEW_LENGTH) {
     t = t.slice(0, MAX_REVIEW_LENGTH).replace(/\s+\S*$/, '').trim();
   }
   if (t.length < MIN_REVIEW_LENGTH && t.length > 0) {
-    // Last resort: hard pad without inventing products.
-    t = `${t} Simple visit tha, theek laga.`.replace(/\s+/g, ' ').trim().slice(0, MAX_REVIEW_LENGTH);
+    t = `${t} Visit theek laga.`.replace(/\s+/g, ' ').trim().slice(0, MAX_REVIEW_LENGTH);
   }
   return t;
 }
@@ -465,19 +489,20 @@ function combineParts(parts: string[]) {
 /**
  * Offline / Groq-fail fallback: keyword banks only — no business name in copy.
  * Multi-keyword drafts weave ideas into one 90–180 char line each.
+ * Pass a changing `variety` (e.g. Date.now()) so each Generate click rotates copy.
  */
-export function fallbackReviews(businessName: string, keywords: string[]) {
+export function fallbackReviews(businessName: string, keywords: string[], variety = 0) {
   const name = (businessName || 'this place').trim() || 'this place';
   const picked = keywords.map((w) => String(w || '').trim()).filter(Boolean).slice(0, 3);
-  const seed = hashSeed(`${name}|${picked.join('|')}`);
+  const seed = hashSeed(`${name}|${picked.join('|')}|v${Number(variety) || 0}`);
 
   if (picked.length === 0) {
-    return pickThree(UNKNOWN_BANK, 'service', seed).map(fitReviewLength);
+    return pickThree(UNKNOWN_BANK, 'service', seed).map((line) => fitReviewLength(line, seed));
   }
 
   if (picked.length === 1) {
     const { bank, kw } = resolveBank(picked[0]);
-    return pickThree(bank, kw, seed).map(fitReviewLength);
+    return pickThree(bank, kw, seed).map((line, i) => fitReviewLength(line, seed + i * 17));
   }
 
   const reviews: string[] = [];
@@ -486,7 +511,7 @@ export function fallbackReviews(businessName: string, keywords: string[]) {
       const { bank, kw } = resolveBank(word);
       return bank[(seed + draft + index) % bank.length](kw);
     });
-    reviews.push(fitReviewLength(combineParts(parts)));
+    reviews.push(fitReviewLength(combineParts(parts), seed + draft * 31));
   }
 
   return reviews.slice(0, 3);
@@ -616,7 +641,8 @@ export function filterReviewDrafts(drafts: string[], businessName: string, keywo
     if (personifiedKeyword(text, kwList)) continue;
     if (awkwardTheKeywordOpening(text, kwList)) continue;
     if (text.length > MAX_REVIEW_LENGTH + 40) continue;
-    text = fitReviewLength(text);
+    text = fitReviewLength(text, hashSeed(text));
+    if (/simple feel thi|zyada drama nahi/i.test(text)) continue;
     if (text.length < MIN_REVIEW_LENGTH || text.length > MAX_REVIEW_LENGTH) continue;
     out.push(text);
     if (out.length >= 3) break;

@@ -72,6 +72,15 @@ describe('review copy', () => {
     const fitted = fitReviewLength('Short line tha.');
     expect(fitted.length).toBeGreaterThanOrEqual(MIN_REVIEW_LENGTH);
     expect(fitted.length).toBeLessThanOrEqual(MAX_REVIEW_LENGTH);
+    expect(fitted.toLowerCase()).not.toMatch(/simple feel thi|zyada drama nahi/);
+  });
+
+  it('different variety rotates fallback copy on regenerate', () => {
+    const a = fallbackReviews('Glow Salon', ['Best Salon'], 1);
+    const b = fallbackReviews('Glow Salon', ['Best Salon'], 99);
+    expect(a.join('|')).not.toBe(b.join('|'));
+    expect(a.every((line) => !/simple feel thi|zyada drama nahi/i.test(line))).toBe(true);
+    expect(b.every((line) => !/simple feel thi|zyada drama nahi/i.test(line))).toBe(true);
   });
 
   it('uses different structures for different keywords', () => {
