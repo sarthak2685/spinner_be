@@ -94,6 +94,9 @@ const CARING_DOCTOR: ReviewTemplate[] = [
   () => `Doctor care se sun liya, rush nahi. Sukoon.`,
   () => `Baat dheere se hui, tension kam ho gayi.`,
   () => `Care clear thi, patiently guide kiya. Accha laga.`,
+  () => `Doctor ne quietly samjha diya, pressure zero tha.`,
+  () => `Sunne ka time diya, jaldi nahi kiya. Soft feel.`,
+  () => `Care wali baat thi, dil halka ho gaya.`,
 ];
 
 const SKILLED_STYLIST: ReviewTemplate[] = [
@@ -274,6 +277,9 @@ const CLEAR_ADVICE: ReviewTemplate[] = [
   () => `Advice clear, jargon nahi. Next steps simple.`,
   () => `Advice aur plan clear. Clarity worth it.`,
   () => `Sawal khatam clear tip pe. Informed feel.`,
+  () => `Seedha bola kya karna hai, confuse nahi hua.`,
+  () => `Tips plain language mein mili. Easy follow.`,
+  () => `Guidance clear thi, doosri opinion ki zarurat nahi.`,
 ];
 
 const GOOD_EXPERIENCE: ReviewTemplate[] = [
@@ -421,15 +427,36 @@ function resolveBank(keyword: string): { bank: ReviewTemplate[]; kw: string } {
   return { bank: UNKNOWN_BANK, kw: keyword.trim() || kw };
 }
 
+function seededRand(seed: number) {
+  let s = (seed >>> 0) || 1;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+function pickFromBank(bank: ReviewTemplate[], kw: string, rand: () => number) {
+  return bank[Math.floor(rand() * bank.length) % bank.length](kw);
+}
+
 function pickThree(bank: ReviewTemplate[], kw: string, seed: number): string[] {
-  const n = bank.length;
-  const start = seed % n;
+  const rand = seededRand(seed);
+  const used = new Set<number>();
   const out: string[] = [];
   for (let i = 0; i < 3; i += 1) {
-    out.push(bank[(start + i) % n](kw));
+    let idx = Math.floor(rand() * bank.length) % bank.length;
+    let guard = 0;
+    while (used.has(idx) && used.size < bank.length && guard < 12) {
+      idx = Math.floor(rand() * bank.length) % bank.length;
+      guard += 1;
+    }
+    used.add(idx);
+    out.push(bank[idx](kw));
   }
   return out;
 }
+
+const JOINERS = ['. ', '. Aur ', ' — ', '. Phir '];
 
 /** Quiet length pads — never reuse one catchphrase across every draft. */
 const LENGTH_PADS = [
@@ -495,6 +522,7 @@ export function fallbackReviews(businessName: string, keywords: string[], variet
   const name = (businessName || 'this place').trim() || 'this place';
   const picked = keywords.map((w) => String(w || '').trim()).filter(Boolean).slice(0, 3);
   const seed = hashSeed(`${name}|${picked.join('|')}|v${Number(variety) || 0}`);
+  const rand = seededRand(seed ^ 0x9e3779b9);
 
   if (picked.length === 0) {
     return pickThree(UNKNOWN_BANK, 'service', seed).map((line) => fitReviewLength(line, seed));
@@ -506,12 +534,25 @@ export function fallbackReviews(businessName: string, keywords: string[], variet
   }
 
   const reviews: string[] = [];
-  for (let draft = 0; draft < 3; draft += 1) {
-    const parts = picked.map((word, index) => {
+  const seen = new Set<string>();
+  for (let draft = 0; draft < 8 && reviews.length < 3; draft += 1) {
+    const parts = picked.map((word) => {
       const { bank, kw } = resolveBank(word);
-      return bank[(seed + draft + index) % bank.length](kw);
-    });
-    reviews.push(fitReviewLength(combineParts(parts), seed + draft * 31));
+      return pickFromBank(bank, kw, rand).replace(/[.]+$/, '').trim();
+    }).filter(Boolean);
+    if (rand() > 0.5) parts.reverse();
+    const joiner = JOINERS[Math.floor(rand() * JOINERS.length) % JOINERS.length];
+    const line = fitReviewLength(`${parts.join(joiner)}.`, seed + draft * 31 + Math.floor(rand() * 1000));
+    if (!line || seen.has(line)) continue;
+    seen.add(line);
+    reviews.push(line);
+  }
+
+  if (reviews.length < 3) {
+    for (const line of pickThree(resolveBank(picked[0]).bank, picked[0], seed + 7).map((t, i) => fitReviewLength(t, seed + i))) {
+      if (reviews.length >= 3) break;
+      if (!seen.has(line)) reviews.push(line);
+    }
   }
 
   return reviews.slice(0, 3);

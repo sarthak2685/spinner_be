@@ -117,7 +117,8 @@ export class PublicService {
     const category = String(kind?.typename || kind?.typecode || '').trim() || 'Local business';
     const fromBody = (body.keywords || []).map((word) => String(word || '').trim()).filter(Boolean);
     const keywords = (fromBody.length ? fromBody : hub.keywords).slice(0, 3);
-    const variety = Number(body.variety) || Date.now();
+    // Always mix client variety with fresh entropy so each click differs even if FE caches.
+    const variety = (Number(body.variety) || Date.now()) ^ ((Math.random() * 1e9) | 0) ^ process.hrtime()[1];
     const raw = await this.askGroq(business.businessname, keywords, category, variety);
     const filtered = filterReviewDrafts(Array.isArray(raw) ? raw : [], business.businessname, keywords);
     const pad = fallbackReviews(business.businessname, keywords, variety);
