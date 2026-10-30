@@ -31,7 +31,10 @@ async function bootstrap() {
     ],
     credentials: true,
   });
-  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
+  // Local + direct hosts use /uploads. Production nginx often proxies only /api → also mount under /api/uploads.
+  const uploads = join(process.cwd(), 'uploads');
+  app.useStaticAssets(uploads, { prefix: '/uploads' });
+  app.useStaticAssets(uploads, { prefix: '/api/uploads' });
   await app.listen(config.port);
 }
 
