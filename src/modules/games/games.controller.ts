@@ -27,6 +27,11 @@ export class GamesController {
   save(@CurrentUser() user: AuthUser, @Body() body: PrizeDto) { return this.games.savePrize(user.businessId!, body); }
   @Post('business/prizes/:id/delete') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('BusinessAdmin')
   remove(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) { return this.games.removePrize(user.businessId!, id); }
+  @Get('public/play/:token/board')
+  board(@Param('token') token: string, @Req() req: Request) {
+    const gameCode = typeof req.query?.gameCode === 'string' ? req.query.gameCode : 'SpinWheel';
+    return this.games.board(token, gameCode || 'SpinWheel');
+  }
   @Post('public/play')
   play(@Body() body: PlayDto, @Req() req: Request) { return this.games.play(body.token, body.gameCode || 'SpinWheel', this.user(req), clientIp(req.headers)); }
   @Get('customer/prizes') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('Customer')
