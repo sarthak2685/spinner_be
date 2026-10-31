@@ -67,12 +67,8 @@ export class GamesService {
     return { ok: true };
   }
 
-  async play(token: string, gameCode: string, user: AuthUser | null, ip: string) {
-    if (this.rates.check(ip, 'PlayGame', 10, 1)) throw new BadRequestException('Too many requests. Please try again later.');
-    const business = await findBusinessByPlace<{ businessid: number; isactive: boolean; activeto?: string | null }>(this.db, token);
-    if (!business || business.isactive === false) throw new NotFoundException('Business not found or is currently inactive.');
-    assertShopOpen(business);
-    const prizes = await this.db.many<{ prizeconfigurationid: number; prizename: string; coins: number; winningpercentage: number; gamecode: string }>(
+  private async activePrizes(businessId: number, gameCode: string) {
+    return this.db.many<{ prizeconfigurationid: number; prizename: string; coins: number; winningpercentage: number; gamecode: string }>(
       `SELECT p.prizeconfigurationid, p.prizename, p.coins, p.winningpercentage, s.gamecode
        FROM public."PrizeConfigurations" p
        INNER JOIN public."GameConfigurations" s ON p.gameconfigurationid=s.gameconfigurationid
@@ -85,8 +81,24 @@ export class GamesService {
            LIMIT 1
          )
        ORDER BY p.prizeconfigurationid`,
-      [business.businessid, gameCode || 'SpinWheel'],
+      [businessId, gameCode || 'SpinWheel'],
     );
+  }
+
+  /** Public prize board for the wheel (no play consumed). */
+  async board(token: string, gameCode: string) {
+    const business = await findBusinessByPlace<{ businessid: number; isactive: boolean; activeto?: string | null }>(this.db, token);
+    if (!business || business.isactive === false) throw new NotFoundException('Business not found or is currently inactive.');
+    const prizes = await this.activePrizes(business.businessid, gameCode || 'SpinWheel');
+    return { prizes: prizes.map((p) => ({ name: p.prizename, coins: Number(p.coins) })) };
+  }
+
+  async play(token: string, gameCode: string, user: AuthUser | null, ip: string) {
+    if (this.rates.check(ip, 'PlayGame', 10, 1)) throw new BadRequestException('Too many requests. Please try again later.');
+    const business = await findBusinessByPlace<{ businessid: number; isactive: boolean; activeto?: string | null }>(this.db, token);
+    if (!business || business.isactive === false) throw new NotFoundException('Business not found or is currently inactive.');
+    assertShopOpen(business);
+    const prizes = await this.activePrizes(business.businessid, gameCode || 'SpinWheel');
     if (!prizes.length) throw new BadRequestException('Prizes are not configured for this game campaign.');
     const customerIdForCount = user?.role === 'Customer' ? user.id : 0;
     let mobileKey = '';
