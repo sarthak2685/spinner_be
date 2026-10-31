@@ -15,3 +15,8 @@ export class BusinessTypeDto {
   isactive?: boolean;
   displayorder?: number;
 }
+
+export class SetBusinessPasswordDto {
+  password!: string;
+  confirm!: string;
+}

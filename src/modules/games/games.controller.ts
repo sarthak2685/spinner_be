@@ -17,6 +17,8 @@ export class GamesController {
   list(@CurrentUser() user: AuthUser, @Param('code') code: string) { return this.games.list(user.businessId!, code); }
   @Post('business/games/:code') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('BusinessAdmin')
   create(@CurrentUser() user: AuthUser, @Param('code') code: string, @Body() body: GameDto) { return this.games.create(user.businessId!, code, body.name); }
+  @Post('business/games/:id/rename') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('BusinessAdmin')
+  rename(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() body: GameDto) { return this.games.rename(user.businessId!, id, body.name); }
   @Post('business/games/:id/active') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('BusinessAdmin')
   toggle(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() body: { isActive: boolean }) { return this.games.toggle(user.businessId!, id, body.isActive); }
   @Post('business/games/:id/delete') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('BusinessAdmin')

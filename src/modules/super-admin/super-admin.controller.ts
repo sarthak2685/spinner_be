@@ -3,7 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Request, Response } from 'express';
 import { SuperAdminService } from './super-admin.service';
-import { BusinessTypeDto } from './dto/super-admin.dto';
+import { BusinessTypeDto, SetBusinessPasswordDto } from './dto/super-admin.dto';
 import { BusinessRegisterDto } from '../registration/dto/registration.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -21,6 +21,7 @@ export class SuperAdminController {
   @Get('businesses') businesses() { return this.admin.businesses(); }
   @Post('businesses/:id/active') active(@Param('id', ParseIntPipe) id: number, @Body() body: { isActive: boolean }) { return this.admin.setActive(id, body.isActive); }
   @Post('businesses/:id/renew') renew(@Param('id', ParseIntPipe) id: number, @Body() body: { days?: number }) { return this.admin.renew(id, body.days); }
+  @Post('businesses/:id/password') password(@Param('id', ParseIntPipe) id: number, @Body() body: SetBusinessPasswordDto) { return this.admin.setOwnerPassword(id, body.password, body.confirm); }
   @Post('businesses') onboard(@Body() body: BusinessRegisterDto & { activeDays?: number }) { return this.admin.onboard(body); }
   @Get('demos') demos() { return this.admin.demos(); }
   @Get('business-types') types() { return this.admin.types(); }

@@ -68,22 +68,31 @@ export class PublicService {
     settings: QueryResultRow | null;
     type: QueryResultRow | null;
     games: QueryResultRow[];
+    prizes: QueryResultRow[];
     qr: QueryResultRow | null;
     keywords: string[];
   }> {
     await this.ensure();
     const business = await this.business(token);
-    const [settings, type, games, qr] = await Promise.all([
+    const [settings, type, games, prizes, qr] = await Promise.all([
       this.db.one<QueryResultRow>(`SELECT * FROM public."BusinessExperienceSettings" WHERE businessid=$1`, [business.businessid]),
       this.db.one<QueryResultRow>(`SELECT bt.* FROM public."BusinessTypes" bt JOIN public."Businesses" b ON b.businesstypeid=bt.businesstypeid WHERE b.businessid=$1`, [business.businessid]),
       this.db.many<QueryResultRow>(`SELECT gamecode, configurationname, isactive FROM public."GameConfigurations" WHERE businessid=$1 AND isactive=true`, [business.businessid]),
+      this.db.many<QueryResultRow>(
+        `SELECT s.gamecode, p.prizename, p.coins
+         FROM public."PrizeConfigurations" p
+         INNER JOIN public."GameConfigurations" s ON p.gameconfigurationid = s.gameconfigurationid
+         WHERE s.businessid=$1 AND s.isactive=true AND p.isactive=true
+         ORDER BY p.prizeconfigurationid`,
+        [business.businessid],
+      ),
       this.db.one<QueryResultRow>(`SELECT qrcodetext, imagepath FROM public."QRCodes" WHERE businessid=$1 ORDER BY createddate DESC LIMIT 1`, [business.businessid]),
     ]);
     const experience = (settings || {}) as { reviewkeywords?: string };
     const kind = type as { typename?: string; typecode?: string } | null;
     const place = business as { tagline?: string; businesstype?: string };
     const businessType = [kind?.typecode, kind?.typename, place.businesstype].filter(Boolean).join(' ');
-    return { business, settings, type, games, qr, keywords: reviewKeywords(experience.reviewkeywords, place.tagline, businessType) };
+    return { business, settings, type, games, prizes, qr, keywords: reviewKeywords(experience.reviewkeywords, place.tagline, businessType) };
   }
 
   async catalog(token: string) {

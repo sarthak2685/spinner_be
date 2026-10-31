@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.module';
+import { hashPassword } from '../../common/utils/password.util';
 import { ensurePlaceColumn } from '../../common/utils/place.util';
 import { activeDays, ensureTermColumn } from '../../common/utils/term.util';
 import { RegistrationService } from '../registration/registration.service';
@@ -63,6 +64,21 @@ export class SuperAdminService {
 
   async setActive(id: number, isActive: boolean) {
     await this.db.query(`UPDATE public."Businesses" SET isactive = $1 WHERE businessid = $2`, [isActive, id]);
+    return { ok: true };
+  }
+
+  async setOwnerPassword(businessId: number, password: string, confirm: string) {
+    const shop = await this.db.one(`SELECT businessid FROM public."Businesses" WHERE businessid=$1`, [businessId]);
+    if (!shop) throw new NotFoundException('Business not found.');
+    if (!password || !confirm) throw new BadRequestException('Enter both password fields.');
+    if (password.length < 6) throw new BadRequestException('Password must be at least 6 characters.');
+    if (password !== confirm) throw new BadRequestException('Passwords do not match.');
+    const owner = await this.db.one<{ userid: number }>(
+      `SELECT userid FROM public."Users" WHERE businessid=$1 AND role='BusinessAdmin' AND COALESCE(isdeleted, false)=false ORDER BY userid LIMIT 1`,
+      [businessId],
+    );
+    if (!owner) throw new NotFoundException('No business owner login found for this shop.');
+    await this.db.query(`UPDATE public."Users" SET passwordhash=$1, failedloginattempts=0, lockoutend=NULL WHERE userid=$2`, [hashPassword(password), owner.userid]);
     return { ok: true };
   }
 

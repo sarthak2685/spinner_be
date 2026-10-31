@@ -23,6 +23,14 @@ export class GamesService {
     if (!live) await this.toggle(businessId, row!.gameconfigurationid, true);
     return { id: row!.gameconfigurationid };
   }
+  async rename(businessId: number, id: number, name: string) {
+    const cleaned = String(name || '').trim().slice(0, 200);
+    if (!cleaned) throw new BadRequestException('Enter a configuration name.');
+    const row = await this.db.one(`SELECT gameconfigurationid FROM public."GameConfigurations" WHERE gameconfigurationid=$1 AND businessid=$2`, [id, businessId]);
+    if (!row) throw new NotFoundException('Game configuration not found.');
+    await this.db.query(`UPDATE public."GameConfigurations" SET configurationname=$1 WHERE gameconfigurationid=$2 AND businessid=$3`, [cleaned, id, businessId]);
+    return { ok: true };
+  }
   async toggle(businessId: number, id: number, isActive: boolean) {
     const row = await this.db.one<{ gamecode: string }>(`SELECT gamecode FROM public."GameConfigurations" WHERE gameconfigurationid=$1 AND businessid=$2`, [id, businessId]);
     if (!row) throw new NotFoundException('Game configuration not found.');
